@@ -583,7 +583,8 @@ bool CheckPositionLimits()
 //+------------------------------------------------------------------+
 double CalculateDynamicLot()
 {
-    double accountSize = AccountInfoDouble(ACCOUNT_FREEMARGIN);
+    // ACCOUNT_FREEMARGIN is deprecated; use ACCOUNT_MARGIN_FREE instead
+    double accountSize = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
     double riskAmount = accountSize * RiskPct / 100.0;
     
     // Calculate lot based on stop loss distance
