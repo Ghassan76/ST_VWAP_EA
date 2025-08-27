@@ -229,7 +229,7 @@ double GetLot(double MM, MarginMode MMMode, string symbol)
    switch(MMMode)
    {
       case FREEMARGIN:
-         margin = AccountInfoDouble(ACCOUNT_FREEMARGIN);
+         margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
          lot = NormalizeDouble(margin * MM / 100000, 2);
          break;
          
@@ -239,7 +239,7 @@ double GetLot(double MM, MarginMode MMMode, string symbol)
          break;
          
       case LOSSFREEMARGIN:
-         margin = AccountInfoDouble(ACCOUNT_FREEMARGIN);
+         margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
          lot = NormalizeDouble(margin * MM / 50000, 2);
          break;
          
