@@ -289,7 +289,15 @@ bool BuyPositionOpen(bool signal, string symbol, datetime signalTime,
       return false;
    }
    
+   // Ensure we have up-to-date market data
+   symbolInfo.RefreshRates();
    double price = symbolInfo.Ask();
+   if(price <= 0)
+   {
+      Print("Error: Unable to retrieve valid ask price for ", symbol);
+      return false;
+   }
+
    double sl = (stopLoss > 0) ? price - stopLoss * symbolInfo.Point() : 0;
    double tp = (takeProfit > 0) ? price + takeProfit * symbolInfo.Point() : 0;
    
@@ -334,7 +342,14 @@ bool SellPositionOpen(bool signal, string symbol, datetime signalTime,
       return false;
    }
    
+   symbolInfo.RefreshRates();
    double price = symbolInfo.Bid();
+   if(price <= 0)
+   {
+      Print("Error: Unable to retrieve valid bid price for ", symbol);
+      return false;
+   }
+
    double sl = (stopLoss > 0) ? price + stopLoss * symbolInfo.Point() : 0;
    double tp = (takeProfit > 0) ? price - takeProfit * symbolInfo.Point() : 0;
    
