@@ -1,0 +1,1313 @@
+#property strict
+#property version   "5.0"
+#property description "EA Code Template"
+
+//────────────────────────────────────────────────────────────────────
+//  01 • ENHANCED ENUMS, STRUCTS, CONSTANTS
+//────────────────────────────────────────────────────────────────────
+enum EA_STATE { 
+   ST_READY = 0, ST_IN_TRADE, ST_FROZEN, ST_COOLDOWN, ST_ARMING 
+};
+enum DIR { DIR_NONE = 0, DIR_BUY = 1, DIR_SELL = -1 };
+enum FREEZE_REASON { 
+   FREEZE_TRADE_CLOSE = 0, FREEZE_DATA_MISSING, FREEZE_MANUAL 
+};
+
+// Constants
+#define MAX_SESSIONS 4
+#define RETRY_ATTEMPTS 5
+#define RETRY_DELAY_MS 100
+#define SECONDS_PER_DAY 86400
+#define SECONDS_PER_MINUTE 60
+#define STATE_FILE_NAME "Enhanced_EA_State.dat"
+
+struct SessionTime
+{
+   bool   enabled;
+   int    startHour;
+   int    startMinute;
+   int    endHour;
+   int    endMinute;
+   
+   SessionTime() : enabled(false), startHour(0), startMinute(0), endHour(0), endMinute(0) {}
+};
+
+// Enhanced structure for tracking position modifications
+struct PositionTracker
+{
+   ulong ticket;
+   int slModifications;
+   int tpModifications;
+   ulong lastTickTime;
+   bool breakEvenExecuted;
+   
+   PositionTracker() : ticket(0), slModifications(0), tpModifications(0), 
+                      lastTickTime(0), breakEvenExecuted(false) {}
+};
+
+string GV(const string tag, const ulong mag) { return _Symbol + "_" + tag + "_" + (string)mag; }
+
+//────────────────────────────────────────────────────────────────────
+//  02 • COMPREHENSIVE USER INPUTS
+//────────────────────────────────────────────────────────────────────
+// 2-A • General Settings
+input ulong   MagicNumber                 = 567890;
+input bool    ip_VerboseLogs              = true;      // Verbose logging mode
+input bool    ip_EnableEntry              = true;      // Master enable switch
+input bool    ip_EnableBuy                = true;      // Allow long trades
+input bool    ip_EnableSell               = true;      // Allow short trades
+
+// 2-B • Time and Day Filters
+input group "=== TIME AND DAY FILTERS ==="
+input bool    ip_UseTimeFilter            = true;
+input int     ip_BeginHour                = 15;
+input int     ip_BeginMinute              = 0;
+input int     ip_EndHour                  = 22;
+input int     ip_EndMinute                = 59;
+input bool    ip_TradeSun                 = false;
+input bool    ip_TradeMon                 = true;
+input bool    ip_TradeTue                 = true;
+input bool    ip_TradeWed                 = true;
+input bool    ip_TradeThu                 = true;
+input bool    ip_TradeFri                 = true;
+input bool    ip_TradeSat                 = false;
+
+// 2-C • Multiple Trading Sessions
+input group "=== MULTIPLE TRADING SESSIONS ==="
+input bool    Session1_Enable             = false;
+input int     Session1_StartHour          = 9;
+input int     Session1_StartMinute        = 0;
+input int     Session1_EndHour            = 12;
+input int     Session1_EndMinute          = 0;
+
+input bool    Session2_Enable             = false;
+input int     Session2_StartHour          = 13;
+input int     Session2_StartMinute        = 0;
+input int     Session2_EndHour            = 17;
+input int     Session2_EndMinute          = 0;
+
+input bool    Session3_Enable             = false;
+input int     Session3_StartHour          = 20;
+input int     Session3_StartMinute        = 0;
+input int     Session3_EndHour            = 23;
+input int     Session3_EndMinute          = 0;
+
+input bool    Session4_Enable             = false;
+input int     Session4_StartHour          = 0;
+input int     Session4_StartMinute        = 0;
+input int     Session4_EndHour            = 6;
+input int     Session4_EndMinute          = 0;
+
+// 2-D • Market Conditions
+input group "=== MARKET CONDITIONS ==="
+input int     ip_MaxSpreadPts             = 140;
+
+// 2-E • Position Sizing
+input group "=== POSITION SIZING ==="
+input bool    ip_DynamicLots              = false;
+input double  ip_RiskPct                  = 1.0;
+input double  ip_FixedLot                 = 2.00;
+input int     ip_SlippagePts              = 30;        // Order slippage
+
+// 2-F • Stop Loss & Take Profit
+input group "=== STOP LOSS & TAKE PROFIT ==="
+input bool    RSLTP_UseMoneyTargets       = false;
+input double  RSLTP_Money_SL_Amount       = 50.0;
+input double  RSLTP_Money_TP_Amount       = 100.0;
+input double  RSLTP_Points_SL             = 10000;
+input double  RSLTP_Points_TP             = 10000;
+
+// 2-G • Enhanced State Management
+input group "=== STATE MANAGEMENT ==="
+input int     FreezeDurationMinutes       = 15;        // Freeze duration after issues
+input int     PostTradeCooldownMin        = 5;         // Cooldown after trade close
+input bool    FreezeOnDataMissing         = true;      // Freeze on missing data
+
+// 2-H • ENHANCED SMART TRAILING WITH LIMITS AND MODULAR BREAK-EVEN
+input group "=== ENHANCED SMART TRAILING ==="
+input bool    EnableBreakEven             = true;      // Enable break-even functionality
+input bool    EnableSmartTrailing         = true;      // Enable smart trailing functionality
+input double  STrail_BreakEvenPercent     = 49.0;      // Profit % to trigger break-even
+input double  STrail_BE_SL_PctOfTP        = 1.0;       // Break-even SL offset as % of TP span
+input double  STrail_TrailStartPercent    = 50.0;      // Profit % to start trailing
+input int     STrail_TrailingSL_StepPoints = 1000;     // Step size for SL trailing (points)
+input int     STrail_TrailingTP_StepPoints = 1000;     // Step size for TP trailing (points)
+input int     STrail_TriggerDistancePoints = 1000;     // Minimum distance to trigger trailing
+input int     STrail_CheckIntervalSec     = 0;         // Timer interval for trailing checks
+input int     STrail_MinIntervalMS        = 0;         // Minimum interval between modifications
+
+// 2-I • NEW: MODIFICATION LIMITS PER POSITION
+input group "=== MODIFICATION LIMITS ==="
+input int     MaxSLModifications          = 5;         // Max SL changes per position (-1 = unlimited)
+input int     MaxTPModifications          = 3;         // Max TP changes per position (-1 = unlimited)
+input bool    LogModificationLimits       = true;      // Log when limits are reached
+
+// 2-J • Enhanced Daily Risk Management
+input group "=== DAILY RISK MANAGEMENT ==="
+input bool    DRisk_EnableMaxTradesPerDay = false;
+input int     DRisk_MaxTradesPerDay       = 10;
+input bool    DRisk_EnableProfitCap       = false;
+input double  DRisk_DailyProfitTarget     = 100.0;
+input bool    DRisk_EnableLossCap         = false;
+input double  DRisk_DailyLossLimit        = 100.0;
+
+// 2-K • Drawdown Protection
+input group "=== DRAWDOWN PROTECTION ==="
+input bool    SDD_EnableDrawdownProtection = false;
+input double  SDD_MaxDrawdownUSD          = 100.0;
+
+// 2-L • External Indicator Integration (PLACEHOLDER FOR FUTURE)
+input group "=== EXTERNAL INDICATOR INTEGRATION ==="
+input string  ExternalIndicatorName      = "";         // Name of external indicator
+input int     SignalBufferIndex          = 0;          // Buffer index for signals
+input bool    UseExternalIndicator       = false;      // Enable external indicator integration
+
+//────────────────────────────────────────────────────────────────────
+//  03 • ENHANCED GLOBAL VARIABLES
+//────────────────────────────────────────────────────────────────────
+// State Management
+EA_STATE g_state                = ST_READY;
+DIR      g_bias                 = DIR_NONE;
+ulong    g_ticket               = 0;
+
+// Enhanced Timing
+datetime g_freezeUntil          = 0;
+datetime g_coolUntil            = 0;
+FREEZE_REASON g_freezeReason    = FREEZE_TRADE_CLOSE;
+
+// Enhanced Session Management
+SessionTime g_sessions[MAX_SESSIONS];
+
+// Enhanced Smart Trailing with Position Tracking
+PositionTracker g_positions[];
+
+// Daily Tracking
+int      g_dayTrades            = 0;
+double   g_dayPnL               = 0.0;
+datetime g_dayStamp             = 0;
+
+// Drawdown Protection
+double   g_SDD_PeakEquity       = 0.0;
+bool     g_SDD_Triggered        = false;
+
+//────────────────────────────────────────────────────────────────────
+//  04 • ENHANCED LOGGING & UTILITY FUNCTIONS
+//────────────────────────────────────────────────────────────────────
+#define LOG_CRITICAL(msg) Print("v5.0 [CRITICAL]: ", msg)
+#define LOG_VERBOSE(msg)  if(ip_VerboseLogs) Print("v5.0 [VERBOSE]: ", msg)
+#define LOG_STATE(msg)    Print("v5.0 [STATE]: ", msg)
+#define LOG_ERROR(msg)    Print("v5.0 [ERROR]: ", msg)
+#define LOG_TRAIL(msg)    if(ip_VerboseLogs) Print("v5.0 [TRAIL]: ", msg)
+
+datetime DayFloor(datetime t) { return (datetime)((t / SECONDS_PER_DAY) * SECONDS_PER_DAY); }
+int SpreadPts() { return (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD); }
+
+double NormalizeLots(double lots)
+{
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double stepLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   
+   if(minLot <= 0.0 || maxLot <= 0.0 || stepLot <= 0.0) return 0.0;
+   
+   lots = MathMax(minLot, MathMin(maxLot, lots));
+   lots = MathFloor(lots / stepLot) * stepLot;
+   return NormalizeDouble(lots, 2);
+}
+
+string StateToString(EA_STATE state)
+{
+   switch(state) {
+      case ST_READY:     return "READY";
+      case ST_IN_TRADE:  return "IN_TRADE";
+      case ST_FROZEN:    return "FROZEN";
+      case ST_COOLDOWN:  return "COOLDOWN";
+      case ST_ARMING:    return "ARMING";
+      default:           return "UNKNOWN";
+   }
+}
+
+//────────────────────────────────────────────────────────────────────
+//  05 • ENHANCED FILTER FUNCTIONS
+//────────────────────────────────────────────────────────────────────
+bool DayAllowed()
+{
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   
+   const bool dayMap[7] = { 
+      ip_TradeSun, ip_TradeMon, ip_TradeTue, 
+      ip_TradeWed, ip_TradeThu, ip_TradeFri, ip_TradeSat 
+   };
+   
+   if(dt.day_of_week < 0 || dt.day_of_week > 6) return false;
+   return dayMap[dt.day_of_week];
+}
+
+bool InTimeWindow()
+{
+   if(!ip_UseTimeFilter) return true;
+   
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   int currentMinutes = dt.hour * 60 + dt.min;
+   int startMinutes = ip_BeginHour * 60 + ip_BeginMinute;
+   int endMinutes = ip_EndHour * 60 + ip_EndMinute;
+   
+   if(startMinutes <= endMinutes) {
+      return (currentMinutes >= startMinutes && currentMinutes <= endMinutes);
+   } else {
+      return (currentMinutes >= startMinutes || currentMinutes <= endMinutes);
+   }
+}
+
+bool InTradingSession()
+{
+   // First check global time window
+   if(!InTimeWindow()) return false;
+   
+   // If no sessions enabled, use global window only
+   bool hasActiveSessions = false;
+   for(int i = 0; i < MAX_SESSIONS; i++) {
+      if(g_sessions[i].enabled) {
+         hasActiveSessions = true;
+         break;
+      }
+   }
+   
+   if(!hasActiveSessions) return true;
+   
+   // Check if current time is in any active session
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   int currentMinutes = dt.hour * 60 + dt.min;
+   
+   for(int i = 0; i < MAX_SESSIONS; i++) {
+      if(!g_sessions[i].enabled) continue;
+      
+      int sessionStart = g_sessions[i].startHour * 60 + g_sessions[i].startMinute;
+      int sessionEnd = g_sessions[i].endHour * 60 + g_sessions[i].endMinute;
+      
+      if(sessionStart <= sessionEnd) {
+         if(currentMinutes >= sessionStart && currentMinutes <= sessionEnd) return true;
+      } else {
+         // Overnight session
+         if(currentMinutes >= sessionStart || currentMinutes <= sessionEnd) return true;
+      }
+   }
+   
+   return false;
+}
+
+bool FiltersOK()
+{
+   bool result = true;
+   
+   // Basic market conditions
+   if(SpreadPts() > ip_MaxSpreadPts) {
+      if(ip_VerboseLogs) LOG_VERBOSE(StringFormat("Spread filter: %d > %d", SpreadPts(), ip_MaxSpreadPts));
+      result = false;
+   }
+   
+   if(result && !DayAllowed()) {
+      if(ip_VerboseLogs) LOG_VERBOSE("Day filter: Trading not allowed today");
+      result = false;
+   }
+   
+   if(result && !InTradingSession()) {
+      if(ip_VerboseLogs) LOG_VERBOSE("Time filter: Outside trading sessions");
+      result = false;
+   }
+   
+   // Daily reset and tracking
+   datetime today = DayFloor(TimeCurrent());
+   if(today != g_dayStamp) {
+      g_dayStamp = today;
+      g_dayTrades = 0;
+      g_dayPnL = 0.0;
+      LOG_VERBOSE("Daily counters reset");
+   }
+   
+   // Daily limits
+   if(result && DRisk_EnableMaxTradesPerDay && g_dayTrades >= DRisk_MaxTradesPerDay) {
+      if(ip_VerboseLogs) LOG_VERBOSE(StringFormat("Daily trade limit: %d >= %d", g_dayTrades, DRisk_MaxTradesPerDay));
+      result = false;
+   }
+   
+   if(result && DRisk_EnableProfitCap && g_dayPnL >= DRisk_DailyProfitTarget) {
+      if(ip_VerboseLogs) LOG_VERBOSE(StringFormat("Daily profit cap: %.2f >= %.2f", g_dayPnL, DRisk_DailyProfitTarget));
+      result = false;
+   }
+   
+   if(result && DRisk_EnableLossCap && g_dayPnL <= -DRisk_DailyLossLimit) {
+      if(ip_VerboseLogs) LOG_VERBOSE(StringFormat("Daily loss limit: %.2f <= %.2f", g_dayPnL, -DRisk_DailyLossLimit));
+      result = false;
+   }
+   
+   // Drawdown protection
+   if(result && SDD_EnableDrawdownProtection && g_SDD_Triggered) {
+      if(ip_VerboseLogs) LOG_VERBOSE("Drawdown protection triggered");
+      result = false;
+   }
+   
+   return result;
+}
+
+//────────────────────────────────────────────────────────────────────
+//  06 • INITIALIZATION FUNCTIONS
+//────────────────────────────────────────────────────────────────────
+bool PrepareSystem()
+{
+   // Initialize session configurations
+   SessionTime session1;
+   session1.enabled = Session1_Enable;
+   session1.startHour = Session1_StartHour;
+   session1.startMinute = Session1_StartMinute;
+   session1.endHour = Session1_EndHour;
+   session1.endMinute = Session1_EndMinute;
+   g_sessions[0] = session1;
+   
+   SessionTime session2;
+   session2.enabled = Session2_Enable;
+   session2.startHour = Session2_StartHour;
+   session2.startMinute = Session2_StartMinute;
+   session2.endHour = Session2_EndHour;
+   session2.endMinute = Session2_EndMinute;
+   g_sessions[1] = session2;
+   
+   SessionTime session3;
+   session3.enabled = Session3_Enable;
+   session3.startHour = Session3_StartHour;
+   session3.startMinute = Session3_StartMinute;
+   session3.endHour = Session3_EndHour;
+   session3.endMinute = Session3_EndMinute;
+   g_sessions[2] = session3;
+   
+   SessionTime session4;
+   session4.enabled = Session4_Enable;
+   session4.startHour = Session4_StartHour;
+   session4.startMinute = Session4_StartMinute;
+   session4.endHour = Session4_EndHour;
+   session4.endMinute = Session4_EndMinute;
+   g_sessions[3] = session4;
+   
+   // Validate sessions
+   for(int i = 0; i < MAX_SESSIONS; i++) {
+      if(g_sessions[i].enabled) {
+         if(g_sessions[i].startHour < 0 || g_sessions[i].startHour > 23 ||
+            g_sessions[i].endHour < 0 || g_sessions[i].endHour > 23 ||
+            g_sessions[i].startMinute < 0 || g_sessions[i].startMinute > 59 ||
+            g_sessions[i].endMinute < 0 || g_sessions[i].endMinute > 59) {
+            LOG_ERROR(StringFormat("Invalid session %d time configuration", i+1));
+            return false;
+         }
+      }
+   }
+   
+   // Validate modification limits
+   if(MaxSLModifications < -1 || MaxTPModifications < -1) {
+      LOG_ERROR("Invalid modification limits. Use -1 for unlimited or positive values");
+      return false;
+   }
+   
+   LOG_VERBOSE("System initialization completed successfully");
+   return true;
+}
+
+//────────────────────────────────────────────────────────────────────
+//  07 • POSITION MANAGEMENT
+//────────────────────────────────────────────────────────────────────
+double CalcLot(double slPoints)
+{
+   if(!ip_DynamicLots) {
+      LOG_VERBOSE(StringFormat("Using fixed lot: %.2f", ip_FixedLot));
+      return NormalizeLots(ip_FixedLot);
+   }
+   
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity <= 0) return NormalizeLots(ip_FixedLot);
+   
+   double riskAmount = equity * ip_RiskPct * 0.01;
+   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   
+   if(tickValue <= 0 || tickSize <= 0 || slPoints <= 0) {
+      LOG_VERBOSE("Invalid parameters for risk calculation, using fixed lot");
+      return NormalizeLots(ip_FixedLot);
+   }
+   
+   double valuePerPoint = tickValue / tickSize;
+   double lotSize = riskAmount / (slPoints * valuePerPoint);
+   
+   LOG_VERBOSE(StringFormat("Risk calc: Equity=%.2f, Risk%%=%.1f, RiskAmt=%.2f, SL=%d pts, Lot=%.2f",
+              equity, ip_RiskPct, riskAmount, (int)slPoints, lotSize));
+   
+   return NormalizeLots(lotSize);
+}
+
+bool PositionModifyRetry(const ulong ticket, double sl, double tp)
+{
+   for(int attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
+      MqlTradeRequest request;
+      MqlTradeResult result;
+      ZeroMemory(request);
+      ZeroMemory(result);
+      
+      request.action = TRADE_ACTION_SLTP;
+      request.position = ticket;
+      request.symbol = _Symbol;
+      request.sl = (sl > 0) ? NormalizeDouble(sl, _Digits) : 0.0;
+      request.tp = (tp > 0) ? NormalizeDouble(tp, _Digits) : 0.0;
+      request.deviation = ip_SlippagePts;
+      request.magic = MagicNumber;
+      
+      bool success = OrderSend(request, result);
+      if(success && (result.retcode == TRADE_RETCODE_DONE ||
+                     result.retcode == TRADE_RETCODE_PLACED ||
+                     result.retcode == TRADE_RETCODE_DONE_PARTIAL)) {
+         LOG_VERBOSE(StringFormat("Position modified: SL=%.5f TP=%.5f", request.sl, request.tp));
+         return true;
+      }
+      
+      LOG_VERBOSE(StringFormat("Modify attempt %d failed: retcode=%d", attempt + 1, result.retcode));
+      
+      // Retry on specific errors
+      if(result.retcode == TRADE_RETCODE_REQUOTE ||
+         result.retcode == TRADE_RETCODE_PRICE_OFF ||
+         result.retcode == TRADE_RETCODE_PRICE_CHANGED) {
+         Sleep(RETRY_DELAY_MS);
+         continue;
+      }
+      break;
+   }
+   
+   LOG_ERROR(StringFormat("Position modification failed after %d attempts", RETRY_ATTEMPTS));
+   return false;
+}
+
+void RSLTP_Attach(const ulong ticket)
+{
+   if(ticket == 0 || !PositionSelectByTicket(ticket)) return;
+   
+   bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double volume = PositionGetDouble(POSITION_VOLUME);
+   
+   if(openPrice <= 0 || volume <= 0) return;
+   
+   double slDistance, tpDistance;
+   
+   if(RSLTP_UseMoneyTargets) {
+      double tickValueProfit = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT);
+      double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      
+      if(tickValueProfit <= 0 || tickSize <= 0) return;
+      
+      double valuePerPoint = (tickValueProfit / tickSize) * volume;
+      if(valuePerPoint <= 0) return;
+      
+      slDistance = RSLTP_Money_SL_Amount / valuePerPoint;
+      tpDistance = RSLTP_Money_TP_Amount / valuePerPoint;
+      
+      LOG_VERBOSE(StringFormat("Money targets: SL=$%.2f (%.1f pts), TP=$%.2f (%.1f pts)",
+                 RSLTP_Money_SL_Amount, slDistance, RSLTP_Money_TP_Amount, tpDistance));
+   } else {
+      slDistance = RSLTP_Points_SL;
+      tpDistance = RSLTP_Points_TP;
+      
+      LOG_VERBOSE(StringFormat("Point targets: SL=%.0f pts, TP=%.0f pts", slDistance, tpDistance));
+   }
+   
+   double stopLoss = openPrice + (isBuy ? -slDistance : +slDistance) * _Point;
+   double takeProfit = openPrice + (isBuy ? +tpDistance : -tpDistance) * _Point;
+   
+   PositionModifyRetry(ticket, stopLoss, takeProfit);
+}
+
+bool SendOrder(DIR direction)
+{
+   if(!ip_EnableEntry) {
+      LOG_VERBOSE("Entry disabled globally");
+      return false;
+   }
+   
+   if(direction == DIR_BUY && !ip_EnableBuy) {
+      LOG_VERBOSE("Buy trades disabled");
+      return false;
+   }
+   
+   if(direction == DIR_SELL && !ip_EnableSell) {
+      LOG_VERBOSE("Sell trades disabled");
+      return false;
+   }
+   
+   // Calculate lot size
+   double slPoints = RSLTP_UseMoneyTargets ?
+      RSLTP_Money_SL_Amount / (SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT) / 
+                               SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE)) :
+      RSLTP_Points_SL;
+   
+   double lotSize = CalcLot(slPoints);
+   if(lotSize <= 0) {
+      LOG_ERROR("Invalid lot size calculated");
+      return false;
+   }
+   
+   double price = (direction == DIR_BUY) ?
+      SymbolInfoDouble(_Symbol, SYMBOL_ASK) :
+      SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   
+   if(price <= 0) {
+      LOG_ERROR("Invalid price");
+      return false;
+   }
+   
+   MqlTradeRequest request;
+   MqlTradeResult result;
+   ZeroMemory(request);
+   ZeroMemory(result);
+   
+   request.action = TRADE_ACTION_DEAL;
+   request.symbol = _Symbol;
+   request.magic = MagicNumber;
+   request.deviation = ip_SlippagePts;
+   request.type = (direction == DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   request.volume = lotSize;
+   request.price = price;
+   
+   // Set filling mode
+   int fillingMode = (int)SymbolInfoInteger(_Symbol, SYMBOL_FILLING_MODE);
+   if(fillingMode == ORDER_FILLING_IOC) {
+      request.type_filling = ORDER_FILLING_IOC;
+   } else if(fillingMode == ORDER_FILLING_RETURN) {
+      request.type_filling = ORDER_FILLING_RETURN;
+   } else {
+      request.type_filling = ORDER_FILLING_FOK;
+   }
+   
+   bool success = OrderSend(request, result);
+   if(success && (result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)) {
+      g_ticket = result.order;
+      g_dayTrades++;
+      
+      LOG_CRITICAL(StringFormat("Order opened: %s ticket %I64u lot %.2f @ %.5f (spread: %d pts)",
+          (direction == DIR_BUY) ? "BUY" : "SELL", g_ticket, lotSize, price, SpreadPts()));
+      
+      RSLTP_Attach(g_ticket);
+      
+      // Register for Enhanced Smart Trailing
+      if(EnableBreakEven || EnableSmartTrailing) {
+         RegisterPositionForTrailing(g_ticket);
+      }
+      
+      return true;
+   }
+   
+   LOG_ERROR(StringFormat("Order failed: retcode=%d (%s)", result.retcode, 
+            result.retcode == TRADE_RETCODE_INVALID_STOPS ? "Invalid stops" :
+            result.retcode == TRADE_RETCODE_NO_MONEY ? "Not enough money" :
+            result.retcode == TRADE_RETCODE_MARKET_CLOSED ? "Market closed" : "Other error"));
+   return false;
+}
+
+//────────────────────────────────────────────────────────────────────
+//  08 • ENHANCED SMART TRAILING SYSTEM WITH LIMITS AND MODULAR BREAK-EVEN
+//────────────────────────────────────────────────────────────────────
+
+// Position tracking functions
+void RegisterPositionForTrailing(const ulong ticket)
+{
+   int arraySize = ArraySize(g_positions);
+   ArrayResize(g_positions, arraySize + 1);
+   
+   g_positions[arraySize].ticket = ticket;
+   g_positions[arraySize].slModifications = 0;
+   g_positions[arraySize].tpModifications = 0;
+   g_positions[arraySize].lastTickTime = GetTickCount();
+   g_positions[arraySize].breakEvenExecuted = false;
+   
+   LOG_TRAIL(StringFormat("Position %I64u registered for enhanced trailing", ticket));
+}
+
+int FindPositionIndex(const ulong ticket)
+{
+   for(int i = 0; i < ArraySize(g_positions); i++) {
+      if(g_positions[i].ticket == ticket) {
+         return i;
+      }
+   }
+   return -1;
+}
+
+void RemovePositionFromTrailing(const ulong ticket)
+{
+   int index = FindPositionIndex(ticket);
+   if(index < 0) return;
+   
+   int arraySize = ArraySize(g_positions);
+   for(int i = index; i < arraySize - 1; i++) {
+      g_positions[i] = g_positions[i + 1];
+   }
+   ArrayResize(g_positions, arraySize - 1);
+   
+   // Clean up any global variables for this position
+   GlobalVariableDel("ST_BE_" + (string)ticket);
+   GlobalVariableDel("ST_TS_" + (string)ticket);
+   GlobalVariableDel("ST_TR_" + (string)ticket);
+   GlobalVariableDel("ST_LSL_" + (string)ticket);
+   GlobalVariableDel("ST_LTP_" + (string)ticket);
+   
+   LOG_TRAIL(StringFormat("Position %I64u removed from trailing", ticket));
+}
+
+bool CanModifySL(const ulong ticket)
+{
+   if(MaxSLModifications == -1) return true; // Unlimited
+   
+   int index = FindPositionIndex(ticket);
+   if(index < 0) return false;
+   
+   bool canModify = g_positions[index].slModifications < MaxSLModifications;
+   
+   if(!canModify && LogModificationLimits) {
+      LOG_TRAIL(StringFormat("SL modification limit reached for ticket %I64u (%d/%d)", 
+               ticket, g_positions[index].slModifications, MaxSLModifications));
+   }
+   
+   return canModify;
+}
+
+bool CanModifyTP(const ulong ticket)
+{
+   if(MaxTPModifications == -1) return true; // Unlimited
+   
+   int index = FindPositionIndex(ticket);
+   if(index < 0) return false;
+   
+   bool canModify = g_positions[index].tpModifications < MaxTPModifications;
+   
+   if(!canModify && LogModificationLimits) {
+      LOG_TRAIL(StringFormat("TP modification limit reached for ticket %I64u (%d/%d)", 
+               ticket, g_positions[index].tpModifications, MaxTPModifications));
+   }
+   
+   return canModify;
+}
+
+void IncrementSLModifications(const ulong ticket)
+{
+   int index = FindPositionIndex(ticket);
+   if(index >= 0) {
+      g_positions[index].slModifications++;
+      LOG_TRAIL(StringFormat("SL modifications for ticket %I64u: %d/%s", 
+               ticket, g_positions[index].slModifications, 
+               MaxSLModifications == -1 ? "unlimited" : (string)MaxSLModifications));
+   }
+}
+
+void IncrementTPModifications(const ulong ticket)
+{
+   int index = FindPositionIndex(ticket);
+   if(index >= 0) {
+      g_positions[index].tpModifications++;
+      LOG_TRAIL(StringFormat("TP modifications for ticket %I64u: %d/%s", 
+               ticket, g_positions[index].tpModifications, 
+               MaxTPModifications == -1 ? "unlimited" : (string)MaxTPModifications));
+   }
+}
+
+bool STrail_TimeGate(const ulong ticket)
+{
+   if(STrail_MinIntervalMS <= 0) return true;
+   
+   int index = FindPositionIndex(ticket);
+   if(index < 0) return false;
+   
+   return (GetTickCount() - g_positions[index].lastTickTime >= (ulong)STrail_MinIntervalMS);
+}
+
+void UpdateLastTickTime(const ulong ticket)
+{
+   int index = FindPositionIndex(ticket);
+   if(index >= 0) {
+      g_positions[index].lastTickTime = GetTickCount();
+   }
+}
+
+// SEPARATED: Break-Even Logic
+bool ExecuteBreakEven(const ulong ticket)
+{
+   if(!EnableBreakEven) return false;
+   
+   int index = FindPositionIndex(ticket);
+   if(index < 0) return false;
+   
+   if(g_positions[index].breakEvenExecuted) return false; // Already executed
+   
+   if(!PositionSelectByTicket(ticket)) return false;
+   if(PositionGetString(POSITION_SYMBOL) != _Symbol) return false;
+   
+   bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+   int sign = isBuy ? 1 : -1;
+   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double currentSL = PositionGetDouble(POSITION_SL);
+   double currentTP = PositionGetDouble(POSITION_TP);
+   
+   double currentPrice = isBuy ? 
+      SymbolInfoDouble(_Symbol, SYMBOL_BID) : 
+      SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   
+   if(openPrice <= 0 || currentPrice <= 0) return false;
+   
+   double tpSpan = MathAbs(currentTP - openPrice);
+   if(tpSpan < _Point) {
+      tpSpan = STrail_TrailingTP_StepPoints * _Point;
+   }
+   
+   double profitPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
+   if(profitPoints <= 0) return false;
+   
+   double profitPercent = 100.0 * profitPoints / tpSpan;
+   
+   if(profitPercent >= STrail_BreakEvenPercent) {
+      if(!CanModifySL(ticket)) return false;
+      
+      double targetSL = openPrice + sign * (STrail_BE_SL_PctOfTP / 100.0) * tpSpan;
+      
+      bool shouldMove = isBuy ? 
+         (currentSL == 0 || targetSL > currentSL + _Point) :
+         (currentSL == 0 || targetSL < currentSL - _Point);
+      
+      if(shouldMove) {
+         double stopLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+         
+         if(isBuy && currentPrice - targetSL < stopLevel) {
+            targetSL = currentPrice - stopLevel;
+         } else if(!isBuy && targetSL - currentPrice < stopLevel) {
+            targetSL = currentPrice + stopLevel;
+         }
+         
+         targetSL = NormalizeDouble(targetSL, _Digits);
+         
+         if(PositionModifyRetry(ticket, targetSL, currentTP)) {
+            g_positions[index].breakEvenExecuted = true;
+            IncrementSLModifications(ticket);
+            UpdateLastTickTime(ticket);
+            
+            LOG_CRITICAL(StringFormat("[BREAK-EVEN] Ticket %I64u -> SL %.5f (%.1f%% profit)", 
+                        ticket, targetSL, profitPercent));
+            return true;
+         }
+      }
+   }
+   
+   return false;
+}
+
+// SEPARATED: Smart Trailing Logic
+bool ExecuteSmartTrailing(const ulong ticket)
+{
+   if(!EnableSmartTrailing) return false;
+   
+   if(!PositionSelectByTicket(ticket)) return false;
+   if(PositionGetString(POSITION_SYMBOL) != _Symbol) return false;
+   
+   bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+   int sign = isBuy ? 1 : -1;
+   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double currentSL = PositionGetDouble(POSITION_SL);
+   double currentTP = PositionGetDouble(POSITION_TP);
+   
+   double currentPrice = isBuy ? 
+      SymbolInfoDouble(_Symbol, SYMBOL_BID) : 
+      SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   
+   if(openPrice <= 0 || currentPrice <= 0 || currentSL <= 0) return false;
+   
+   double tpSpan = MathAbs(currentTP - openPrice);
+   if(tpSpan < _Point) {
+      tpSpan = STrail_TrailingTP_StepPoints * _Point;
+   }
+   
+   double profitPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
+   if(profitPoints <= 0) return false;
+   
+   double profitPercent = 100.0 * profitPoints / tpSpan;
+   
+   if(profitPercent >= STrail_TrailStartPercent) {
+      double stopLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+      double minGap = MathMax(stopLevel, STrail_TriggerDistancePoints * _Point);
+      
+      double currentGap = isBuy ? (currentPrice - currentSL) : (currentSL - currentPrice);
+      
+      if(currentGap >= minGap + STrail_TrailingSL_StepPoints * _Point) {
+         bool canModifySL = CanModifySL(ticket);
+         bool canModifyTP = CanModifyTP(ticket);
+         
+         if(!canModifySL && !canModifyTP) return false; // No modifications allowed
+         
+         double targetSL = currentSL;
+         double targetTP = currentTP;
+         
+         if(canModifySL) {
+            targetSL = currentSL + sign * STrail_TrailingSL_StepPoints * _Point;
+            
+            if(isBuy && currentPrice - targetSL < minGap) {
+               targetSL = currentPrice - minGap;
+            } else if(!isBuy && targetSL - currentPrice < minGap) {
+               targetSL = currentPrice + minGap;
+            }
+            
+            targetSL = NormalizeDouble(targetSL, _Digits);
+         }
+         
+         if(canModifyTP && currentTP > 0) {
+            targetTP = currentTP + sign * STrail_TrailingTP_StepPoints * _Point;
+            targetTP = NormalizeDouble(targetTP, _Digits);
+         }
+         
+         if(PositionModifyRetry(ticket, targetSL, targetTP)) {
+            if(canModifySL && targetSL != currentSL) {
+               IncrementSLModifications(ticket);
+            }
+            if(canModifyTP && targetTP != currentTP) {
+               IncrementTPModifications(ticket);
+            }
+            UpdateLastTickTime(ticket);
+            
+            LOG_CRITICAL(StringFormat("[SMART-TRAIL] Ticket %I64u -> SL %.5f TP %.5f (%.1f%% profit)", 
+                        ticket, targetSL, targetTP, profitPercent));
+            return true;
+         }
+      }
+   }
+   
+   return false;
+}
+
+// Main Enhanced Trailing Management Function
+void ManageEnhancedTrailing()
+{
+   if(!EnableBreakEven && !EnableSmartTrailing) return;
+   
+   // Clean up closed positions
+   for(int i = ArraySize(g_positions) - 1; i >= 0; i--) {
+      if(!PositionSelectByTicket(g_positions[i].ticket)) {
+         RemovePositionFromTrailing(g_positions[i].ticket);
+      }
+   }
+   
+   // Process active positions
+   for(int i = 0; i < ArraySize(g_positions); i++) {
+      ulong ticket = g_positions[i].ticket;
+      
+      if(!STrail_TimeGate(ticket)) continue;
+      
+      // Execute break-even first (if enabled and not yet executed)
+      bool breakEvenExecuted = ExecuteBreakEven(ticket);
+      
+      // Execute smart trailing (if enabled and conditions met)
+      if(!breakEvenExecuted) { // Avoid double modification in same tick
+         ExecuteSmartTrailing(ticket);
+      }
+   }
+}
+
+void RebuildPositionCache()
+{
+   ArrayResize(g_positions, 0);
+   
+   for(int i = 0; i < PositionsTotal(); i++) {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
+      
+      RegisterPositionForTrailing(ticket);
+   }
+   
+   LOG_VERBOSE(StringFormat("Enhanced trailing cache rebuilt: %d positions", ArraySize(g_positions)));
+}
+
+//────────────────────────────────────────────────────────────────────
+//  09 • ENHANCED STATE PERSISTENCE
+//────────────────────────────────────────────────────────────────────
+void SaveState()
+{
+   // Enhanced Global Variables (simplified for cleaner EA)
+   GlobalVariableSet(GV("state", MagicNumber), (double)g_state);
+   GlobalVariableSet(GV("bias", MagicNumber), (double)g_bias);
+   GlobalVariableSet(GV("ticket", MagicNumber), (double)g_ticket);
+   GlobalVariableSet(GV("fUntil", MagicNumber), (double)g_freezeUntil);
+   GlobalVariableSet(GV("cUntil", MagicNumber), (double)g_coolUntil);
+   GlobalVariableSet(GV("fReason", MagicNumber), (double)g_freezeReason);
+   
+   // Daily tracking
+   GlobalVariableSet(GV("dayTrades", MagicNumber), (double)g_dayTrades);
+   GlobalVariableSet(GV("dayPnL", MagicNumber), g_dayPnL);
+   GlobalVariableSet(GV("dayStamp", MagicNumber), (double)g_dayStamp);
+   
+   // File-based backup
+   SaveStateToFile();
+   
+   LOG_VERBOSE(StringFormat("State saved: %s, bias=%s, ticket=%I64u", 
+              StateToString(g_state), 
+              (g_bias == DIR_BUY) ? "BUY" : (g_bias == DIR_SELL) ? "SELL" : "NONE",
+              g_ticket));
+}
+
+void LoadState()
+{
+   // Load from Global Variables
+   if(GlobalVariableCheck(GV("state", MagicNumber)))
+      g_state = (EA_STATE)(int)GlobalVariableGet(GV("state", MagicNumber));
+   if(GlobalVariableCheck(GV("bias", MagicNumber)))
+      g_bias = (DIR)(int)GlobalVariableGet(GV("bias", MagicNumber));
+   if(GlobalVariableCheck(GV("ticket", MagicNumber)))
+      g_ticket = (ulong)GlobalVariableGet(GV("ticket", MagicNumber));
+   if(GlobalVariableCheck(GV("fUntil", MagicNumber)))
+      g_freezeUntil = (datetime)GlobalVariableGet(GV("fUntil", MagicNumber));
+   if(GlobalVariableCheck(GV("cUntil", MagicNumber)))
+      g_coolUntil = (datetime)GlobalVariableGet(GV("cUntil", MagicNumber));
+   if(GlobalVariableCheck(GV("fReason", MagicNumber)))
+      g_freezeReason = (FREEZE_REASON)(int)GlobalVariableGet(GV("fReason", MagicNumber));
+      
+   // Daily tracking
+   if(GlobalVariableCheck(GV("dayTrades", MagicNumber)))
+      g_dayTrades = (int)GlobalVariableGet(GV("dayTrades", MagicNumber));
+   if(GlobalVariableCheck(GV("dayPnL", MagicNumber)))
+      g_dayPnL = GlobalVariableGet(GV("dayPnL", MagicNumber));
+   if(GlobalVariableCheck(GV("dayStamp", MagicNumber)))
+      g_dayStamp = (datetime)GlobalVariableGet(GV("dayStamp", MagicNumber));
+   
+   // Try to load from file if GVs are missing
+   LoadStateFromFile();
+   
+   LOG_STATE(StringFormat("State loaded: %s, bias=%s, ticket=%I64u", 
+             StateToString(g_state), 
+             (g_bias == DIR_BUY) ? "BUY" : (g_bias == DIR_SELL) ? "SELL" : "NONE",
+             g_ticket));
+}
+
+void SaveStateToFile()
+{
+   int fileHandle = FileOpen(STATE_FILE_NAME, FILE_WRITE | FILE_BIN);
+   if(fileHandle == INVALID_HANDLE) {
+      LOG_ERROR("Failed to open state file for writing");
+      return;
+   }
+   
+   FileWriteInteger(fileHandle, (int)g_state);
+   FileWriteInteger(fileHandle, (int)g_bias);
+   FileWriteLong(fileHandle, g_ticket);
+   FileWriteLong(fileHandle, g_freezeUntil);
+   FileWriteLong(fileHandle, g_coolUntil);
+   FileWriteInteger(fileHandle, (int)g_freezeReason);
+   
+   // Daily tracking
+   FileWriteInteger(fileHandle, g_dayTrades);
+   FileWriteDouble(fileHandle, g_dayPnL);
+   FileWriteLong(fileHandle, g_dayStamp);
+   
+   // Write timestamp
+   FileWriteLong(fileHandle, TimeCurrent());
+   
+   FileClose(fileHandle);
+   LOG_VERBOSE("State saved to file");
+}
+
+void LoadStateFromFile()
+{
+   int fileHandle = FileOpen(STATE_FILE_NAME, FILE_READ | FILE_BIN);
+   if(fileHandle == INVALID_HANDLE) return; // File doesn't exist yet
+   
+   g_state = (EA_STATE)FileReadInteger(fileHandle);
+   g_bias = (DIR)FileReadInteger(fileHandle);
+   g_ticket = (ulong)FileReadLong(fileHandle);
+   g_freezeUntil = (datetime)FileReadLong(fileHandle);
+   g_coolUntil = (datetime)FileReadLong(fileHandle);
+   g_freezeReason = (FREEZE_REASON)FileReadInteger(fileHandle);
+   
+   // Daily tracking
+   g_dayTrades = FileReadInteger(fileHandle);
+   g_dayPnL = FileReadDouble(fileHandle);
+   g_dayStamp = (datetime)FileReadLong(fileHandle);
+   
+   datetime savedTime = (datetime)FileReadLong(fileHandle);
+   
+   FileClose(fileHandle);
+   LOG_VERBOSE(StringFormat("State loaded from file (saved at %s)", TimeToString(savedTime)));
+}
+
+void EnterFreeze(const string reason, FREEZE_REASON freezeReason)
+{
+   g_freezeReason = freezeReason;
+   
+   if(FreezeDurationMinutes == 0) {
+      g_state = ST_ARMING;
+      SaveState();
+      return;
+   }
+   
+   g_state = ST_FROZEN;
+   g_freezeUntil = TimeCurrent() + FreezeDurationMinutes * SECONDS_PER_MINUTE;
+   SaveState();
+   
+   LOG_STATE(StringFormat("Entering freeze: %s (reason: %s, until %s)", 
+            reason, 
+            (freezeReason == FREEZE_TRADE_CLOSE) ? "Trade Close" :
+            (freezeReason == FREEZE_DATA_MISSING) ? "Data Missing" : "Manual",
+            TimeToString(g_freezeUntil)));
+}
+
+void EnterCooldown()
+{
+   if(PostTradeCooldownMin == 0) {
+      g_state = ST_ARMING;
+      SaveState();
+      return;
+   }
+   
+   g_state = ST_COOLDOWN;
+   g_coolUntil = TimeCurrent() + PostTradeCooldownMin * SECONDS_PER_MINUTE;
+   SaveState();
+   LOG_STATE(StringFormat("Entering cooldown for %d minutes (until %s)", 
+            PostTradeCooldownMin, TimeToString(g_coolUntil)));
+}
+
+//────────────────────────────────────────────────────────────────────
+//  10 • SIMPLIFIED FINITE STATE MACHINE (READY FOR EXTERNAL SIGNALS)
+//────────────────────────────────────────────────────────────────────
+void FSM()
+{
+   // Handle state timers
+   if(g_state == ST_FROZEN && TimeCurrent() >= g_freezeUntil) {
+      g_state = ST_ARMING;
+      SaveState();
+      LOG_STATE("Freeze period ended");
+   }
+   
+   if(g_state == ST_COOLDOWN && TimeCurrent() >= g_coolUntil) {
+      g_state = ST_ARMING;
+      SaveState();
+      LOG_STATE("Cooldown period ended");
+   }
+   
+   if(g_state == ST_ARMING) {
+      g_state = ST_READY;
+      g_bias = DIR_NONE;
+      SaveState();
+      LOG_STATE("Armed and ready for signals");
+   }
+   
+   // Handle in-trade state
+   if(g_state == ST_IN_TRADE) {
+      if(g_ticket != 0 && !PositionSelectByTicket(g_ticket)) {
+         // Position closed
+         g_ticket = 0;
+         g_bias = DIR_NONE;
+         
+         // Post-trade logic
+         if(PostTradeCooldownMin > 0) {
+            EnterCooldown();
+         } else {
+            EnterFreeze("Trade closed", FREEZE_TRADE_CLOSE);
+         }
+         LOG_CRITICAL("Position closed, entering post-trade state");
+      }
+      return;
+   }
+   
+   // READY state - waiting for external signals
+   if(g_state == ST_READY) {
+      // PLACEHOLDER: This is where external indicator signals will be processed
+      // For now, we'll just demonstrate the structure
+      
+      if(UseExternalIndicator && ExternalIndicatorName != "") {
+         // FUTURE IMPLEMENTATION: Get signal from external indicator
+         // double signal = iCustom(_Symbol, PERIOD_CURRENT, ExternalIndicatorName, SignalBufferIndex, 0);
+         // 
+         // Example signal processing:
+         // if(signal > 0 && FiltersOK()) {
+         //    if(SendOrder(DIR_BUY)) {
+         //       g_state = ST_IN_TRADE;
+         //       g_bias = DIR_BUY;
+         //       SaveState();
+         //    }
+         // } else if(signal < 0 && FiltersOK()) {
+         //    if(SendOrder(DIR_SELL)) {
+         //       g_state = ST_IN_TRADE;
+         //       g_bias = DIR_SELL;
+         //       SaveState();
+         //    }
+         // }
+         
+         LOG_VERBOSE("External indicator integration ready (placeholder)");
+      }
+   }
+}
+
+//────────────────────────────────────────────────────────────────────
+//  11 • ENHANCED EVENT HANDLERS
+//────────────────────────────────────────────────────────────────────
+int OnInit()
+{
+   LOG_CRITICAL("EA Starting - Enhanced Trading EA v5.0 - Clean Architecture with Advanced Smart Trailing");
+   
+   // Clear previous state in tester
+   if(MQLInfoInteger(MQL_TESTER)) {
+      LOG_VERBOSE("Tester mode detected");
+   }
+   
+   // Initialize system
+   if(!PrepareSystem()) {
+      LOG_ERROR("Failed to initialize system");
+      return INIT_FAILED;
+   }
+   
+   // Load saved state
+   LoadState();
+   
+   // Validate loaded state
+   if(g_ticket != 0) {
+      if(PositionSelectByTicket(g_ticket)) {
+         LOG_CRITICAL(StringFormat("Resuming management of position %I64u", g_ticket));
+      } else {
+         LOG_CRITICAL(StringFormat("Saved position %I64u no longer exists", g_ticket));
+         g_ticket = 0;
+         g_state = ST_READY;
+      }
+   }
+   
+   // Set timer for enhanced trailing if needed
+   if((EnableBreakEven || EnableSmartTrailing) && STrail_CheckIntervalSec > 0) {
+      EventSetTimer(STrail_CheckIntervalSec);
+      LOG_VERBOSE(StringFormat("Enhanced trailing timer set: %d seconds", STrail_CheckIntervalSec));
+   }
+   
+   // Initialize enhanced trailing cache
+   RebuildPositionCache();
+   
+   // Initialize drawdown protection
+   g_SDD_PeakEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   
+   // Print configuration summary
+   int enabledSessions = 0;
+   for(int i = 0; i < MAX_SESSIONS; i++) if(g_sessions[i].enabled) enabledSessions++;
+   
+   LOG_CRITICAL(StringFormat("EA initialized successfully - State: %s", StateToString(g_state)));
+   LOG_CRITICAL(StringFormat("Config: %d sessions, Break-even: %s, Smart trailing: %s",
+               enabledSessions,
+               EnableBreakEven ? "ON" : "OFF",
+               EnableSmartTrailing ? "ON" : "OFF"));
+   LOG_CRITICAL(StringFormat("Modification limits: SL=%s, TP=%s",
+               MaxSLModifications == -1 ? "unlimited" : (string)MaxSLModifications,
+               MaxTPModifications == -1 ? "unlimited" : (string)MaxTPModifications));
+   
+   return INIT_SUCCEEDED;
+}
+
+void OnDeinit(const int reason)
+{
+   SaveState();
+   EventKillTimer();
+   
+   LOG_CRITICAL(StringFormat("EA deinitialized (reason: %s)", 
+               reason == REASON_REMOVE ? "Removed" :
+               reason == REASON_RECOMPILE ? "Recompiled" :
+               reason == REASON_CHARTCHANGE ? "Chart Change" :
+               reason == REASON_CHARTCLOSE ? "Chart Close" :
+               reason == REASON_PARAMETERS ? "Parameters Changed" :
+               reason == REASON_ACCOUNT ? "Account Changed" : "Other"));
+}
+
+void OnTimer()
+{
+   ManageEnhancedTrailing();
+   LOG_VERBOSE("Timer: Managing enhanced trailing");
+}
+
+void OnTradeTransaction(const MqlTradeTransaction &transaction,
+                       const MqlTradeRequest &request,
+                       const MqlTradeResult &result)
+{
+   if(transaction.type != TRADE_TRANSACTION_DEAL_ADD) return;
+   if(transaction.deal == 0 || !HistoryDealSelect(transaction.deal)) return;
+   if((ulong)HistoryDealGetInteger(transaction.deal, DEAL_MAGIC) != MagicNumber) return;
+   
+   // Update daily P&L with detailed logging
+   double profit = HistoryDealGetDouble(transaction.deal, DEAL_PROFIT);
+   double commission = HistoryDealGetDouble(transaction.deal, DEAL_COMMISSION);
+   double swap = HistoryDealGetDouble(transaction.deal, DEAL_SWAP);
+   double totalPnL = profit + commission + swap;
+   
+   g_dayPnL += totalPnL;
+   
+   LOG_CRITICAL(StringFormat("Trade P&L: %.2f (profit=%.2f, comm=%.2f, swap=%.2f) | Day total: %.2f", 
+               totalPnL, profit, commission, swap, g_dayPnL));
+   
+   // Immediate trailing check
+   ManageEnhancedTrailing();
+}
+
+void OnTick()
+{
+   // Run simplified finite state machine
+   FSM();
+   
+   // Manage enhanced trailing
+   ManageEnhancedTrailing();
+   
+   // Enhanced drawdown protection
+   if(SDD_EnableDrawdownProtection && !g_SDD_Triggered) {
+      double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      g_SDD_PeakEquity = MathMax(g_SDD_PeakEquity, currentEquity);
+      double currentDrawdown = g_SDD_PeakEquity - currentEquity;
+      
+      if(currentDrawdown >= SDD_MaxDrawdownUSD) {
+         LOG_CRITICAL(StringFormat("EMERGENCY: Drawdown protection triggered! %.2f >= %.2f", 
+                     currentDrawdown, SDD_MaxDrawdownUSD));
+         
+         // Emergency close all positions
+         for(int i = PositionsTotal() - 1; i >= 0; i--) {
+            ulong ticket = PositionGetTicket(i);
+            if(!PositionSelectByTicket(ticket)) continue;
+            if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+            if((ulong)PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
+            
+            MqlTradeRequest req;
+            MqlTradeResult res;
+            ZeroMemory(req);
+            ZeroMemory(res);
+            
+            req.action = TRADE_ACTION_DEAL;
+            req.position = ticket;
+            req.symbol = _Symbol;
+            req.magic = MagicNumber;
+            req.volume = PositionGetDouble(POSITION_VOLUME);
+            req.deviation = ip_SlippagePts;
+            req.type = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ?
+                      ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+            req.price = (req.type == ORDER_TYPE_BUY) ?
+                       SymbolInfoDouble(_Symbol, SYMBOL_ASK) :
+                       SymbolInfoDouble(_Symbol, SYMBOL_BID);
+            
+            if(!OrderSend(req, res) ||
+               (res.retcode != TRADE_RETCODE_DONE &&
+                res.retcode != TRADE_RETCODE_PLACED)) {
+               LOG_ERROR(StringFormat("Emergency close failed for ticket %I64u, retcode: %d", 
+                        ticket, res.retcode));
+            } else {
+               LOG_CRITICAL(StringFormat("Emergency close successful for ticket %I64u", ticket));
+            }
+         }
+         
+         g_SDD_Triggered = true;
+         EnterFreeze("Drawdown protection triggered", FREEZE_MANUAL);
+      }
+   }
+}
+
+//────────────────────────────────────────────────────────────────────
+//  END OF ENHANCED TRADING EA v5.0
+//────────────────────────────────────────────────────────────────────
