@@ -520,11 +520,13 @@ void ProcessBreakEven(double breakEvenPercent, double beSLPercent)
       
       if(profitPercent >= breakEvenPercent)
       {
-         double newSL = entryPrice + (currentProfit * beSLPercent / 100);
-         
+         // Offset stop loss from entry based on TP distance rather than current profit
+         double offset = tpDistance * beSLPercent / 100.0;
+         double newSL = entryPrice + offset;
+
          if(positionInfo.PositionType() == POSITION_TYPE_SELL)
-            newSL = entryPrice - (currentProfit * beSLPercent / 100);
-            
+            newSL = entryPrice - offset;
+
          if(ModifyPosition(ticket, newSL, positionInfo.TakeProfit()))
          {
             g_positionTrackers[i].breakEvenExecuted = true;
