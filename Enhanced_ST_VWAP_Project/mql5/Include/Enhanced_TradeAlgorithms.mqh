@@ -544,7 +544,7 @@ void AddPositionTracker(ulong ticket, double entryPrice, double sl, double tp)
          tracker.slModifications = 0;
          tracker.tpModifications = 0;
          tracker.breakEvenExecuted = false;
-         tracker.lastTickTime = GetTickCount();
+         tracker.lastTickTime = (datetime)GetTickCount();
          tracker.maxProfit = 0;
          tracker.maxDrawdown = 0;
          tracker.runningPnL = 0;
