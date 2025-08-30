@@ -58,9 +58,20 @@ struct PositionCache
    datetime lastUpdate;
    POSITION_STATE state;
    
-   PositionCache() : ticket(0), type(POSITION_TYPE_BUY), volume(0), openPrice(0),
-                    stopLoss(0), takeProfit(0), currentPrice(0), profit(0),
-                    openTime(0), lastUpdate(0), state(POSITION_UNKNOWN) {}
+   void Init()
+   {
+      ticket = 0;
+      type = POSITION_TYPE_BUY;
+      volume = 0;
+      openPrice = 0;
+      stopLoss = 0;
+      takeProfit = 0;
+      currentPrice = 0;
+      profit = 0;
+      openTime = 0;
+      lastUpdate = 0;
+      state = POSITION_UNKNOWN;
+   }
 };
 
 struct TradeStatistics
@@ -76,9 +87,19 @@ struct TradeStatistics
    double winRate;
    datetime lastTradeTime;
    
-   TradeStatistics() : totalTrades(0), winningTrades(0), losingTrades(0),
-                      totalProfit(0), totalLoss(0), maxProfit(0), maxLoss(0),
-                      profitFactor(0), winRate(0), lastTradeTime(0) {}
+   void Init()
+   {
+      totalTrades = 0;
+      winningTrades = 0;
+      losingTrades = 0;
+      totalProfit = 0;
+      totalLoss = 0;
+      maxProfit = 0;
+      maxLoss = 0;
+      profitFactor = 0;
+      winRate = 0;
+      lastTradeTime = 0;
+   }
 };
 
 struct MarketInfo
@@ -92,8 +113,17 @@ struct MarketInfo
    double tickSize;
    datetime lastUpdate;
    
-   MarketInfo() : bid(0), ask(0), spread(0), point(0), digits(0),
-                 tickValue(0), tickSize(0), lastUpdate(0) {}
+   void Init()
+   {
+      bid = 0;
+      ask = 0;
+      spread = 0;
+      point = 0;
+      digits = 0;
+      tickValue = 0;
+      tickSize = 0;
+      lastUpdate = 0;
+   }
 };
 
 //+------------------------------------------------------------------+
@@ -159,6 +189,12 @@ void UpdatePositionCache(string symbol, ulong magicNumber = 0)
    // Resize cache array if needed
    if(ArraySize(g_positionCache) < MAX_POSITIONS_CACHE)
       ArrayResize(g_positionCache, MAX_POSITIONS_CACHE);
+   
+   // Initialize all cache entries
+   for(int i = 0; i < MAX_POSITIONS_CACHE; i++)
+   {
+      g_positionCache[i].Init();
+   }
    
    // Cache all relevant positions
    for(int i = 0; i < PositionsTotal() && g_cacheSize < MAX_POSITIONS_CACHE; i++)
@@ -807,11 +843,12 @@ void InitializeTradeAlgorithms(string symbol)
    g_cacheSize = 0;
    g_lastCacheUpdate = 0;
    
+   // Initialize structures
+   g_marketInfo.Init();
+   g_tradeStats.Init();
+   
    // Initialize market info
    UpdateMarketInfoCache(symbol);
-   
-   // Initialize statistics
-   ZeroMemory(g_tradeStats);
    
    // Reset error tracking
    g_lastError = 0;

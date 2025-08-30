@@ -113,8 +113,15 @@ struct SignalStats
    int signalBar;
    double lastSignalPrice;
    
-   SignalStats() : totalSignals(0), buySignals(0), sellSignals(0),
-                  lastSignalTime(0), signalBar(0), lastSignalPrice(0) {}
+   void Init()
+   {
+      totalSignals = 0;
+      buySignals = 0;
+      sellSignals = 0;
+      lastSignalTime = 0;
+      signalBar = 0;
+      lastSignalPrice = 0;
+   }
 };
 
 SignalStats g_signalStats;
@@ -533,7 +540,7 @@ void ProcessNewSignal(int bar, datetime signalTime, double signalPrice, int sign
 //+------------------------------------------------------------------+
 void InitializeAnalytics()
 {
-   ZeroMemory(g_signalStats);
+   g_signalStats.Init();
    Print("Signal analytics initialized");
 }
 
