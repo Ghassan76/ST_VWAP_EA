@@ -1043,3 +1043,121 @@ string GetPerformanceReport()
 }
 
 //+------------------------------------------------------------------+
+//| Missing Functions Implementation                                 |
+//+------------------------------------------------------------------+
+void UpdateAnalyticsData()
+{
+   // Update real-time analytics data
+   datetime currentTime = TimeCurrent();
+   double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   
+   // Update performance tracking
+   if(g_performanceMetrics.startTime == 0)
+      g_performanceMetrics.startTime = currentTime;
+   
+   // Calculate time-based metrics
+   double daysPassed = (currentTime - g_performanceMetrics.startTime) / 86400.0;
+   if(daysPassed > 0)
+   {
+      g_performanceMetrics.tradesPerDay = (int)(g_tradeStats.totalTrades / daysPassed);
+   }
+   
+   Print("Analytics data updated - Equity: ", DoubleToString(currentEquity, 2));
+}
+
+void UpdateMarketConditions()
+{
+   datetime currentTime = TimeCurrent();
+   
+   // Basic market condition updates
+   g_marketConditions.lastUpdate = currentTime;
+   
+   // Simple volatility calculation based on spread
+   double currentSpread = GetCachedSpread();
+   double currentPrice = GetCachedPrice();
+   
+   if(currentPrice > 0)
+   {
+      g_marketConditions.volatility = (currentSpread / currentPrice) * 100.0;
+   }
+   
+   // Simple trend strength based on recent price movement
+   static double lastPrice = 0;
+   if(lastPrice > 0 && currentPrice > 0)
+   {
+      double priceChange = currentPrice - lastPrice;
+      g_marketConditions.trendStrength = (priceChange / lastPrice) * 100.0;
+      
+      // Determine market state
+      if(MathAbs(g_marketConditions.trendStrength) > 0.5)
+      {
+         g_marketConditions.state = (g_marketConditions.trendStrength > 0) ? MARKET_TRENDING_UP : MARKET_TRENDING_DOWN;
+      }
+      else if(g_marketConditions.volatility > 2.0)
+      {
+         g_marketConditions.state = MARKET_VOLATILE;
+      }
+      else if(g_marketConditions.volatility < 0.5)
+      {
+         g_marketConditions.state = MARKET_QUIET;
+      }
+      else
+      {
+         g_marketConditions.state = MARKET_RANGING;
+      }
+   }
+   
+   lastPrice = currentPrice;
+}
+
+void CalculatePerformanceMetrics()
+{
+   // Calculate advanced performance metrics
+   if(g_tradeStats.totalTrades > 0)
+   {
+      // Calculate win rate
+      g_tradeStats.winRate = ((double)g_tradeStats.winTrades / g_tradeStats.totalTrades) * 100.0;
+      
+      // Calculate profit factor
+      if(g_tradeStats.avgLossAmount < 0)
+      {
+         double grossProfit = g_tradeStats.avgWinAmount * g_tradeStats.winTrades;
+         double grossLoss = MathAbs(g_tradeStats.avgLossAmount * g_tradeStats.loseTrades);
+         
+         if(grossLoss > 0)
+            g_tradeStats.profitFactor = grossProfit / grossLoss;
+      }
+   }
+   
+   // Calculate return metrics
+   double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double initialBalance = AccountInfoDouble(ACCOUNT_BALANCE) - g_tradeStats.totalProfit;
+   
+   if(initialBalance > 0 && g_tradeStats.totalProfit != 0)
+   {
+      g_performanceMetrics.totalReturn = (g_tradeStats.totalProfit / initialBalance) * 100.0;
+      
+      // Calculate annualized return
+      datetime currentTime = TimeCurrent();
+      double daysPassed = (currentTime - g_performanceMetrics.startTime) / 86400.0;
+      
+      if(daysPassed > 0)
+      {
+         g_performanceMetrics.annualizedReturn = (g_performanceMetrics.totalReturn / daysPassed) * 365.0;
+      }
+   }
+   
+   // Update max drawdown
+   if(g_tradeStats.maxDrawdown > 0 && initialBalance > 0)
+   {
+      g_performanceMetrics.maxDrawdownPercent = (g_tradeStats.maxDrawdown / initialBalance) * 100.0;
+      
+      if(g_performanceMetrics.maxDrawdownPercent > 0)
+      {
+         g_performanceMetrics.recoveryFactor = g_performanceMetrics.totalReturn / g_performanceMetrics.maxDrawdownPercent;
+         g_performanceMetrics.calmarRatio = g_performanceMetrics.annualizedReturn / g_performanceMetrics.maxDrawdownPercent;
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
