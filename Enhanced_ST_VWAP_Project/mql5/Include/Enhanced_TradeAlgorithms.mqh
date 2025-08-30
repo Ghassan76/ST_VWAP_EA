@@ -1160,4 +1160,26 @@ void CalculatePerformanceMetrics()
    }
 }
 
+void LoadHistory(datetime time, string symbol, ENUM_TIMEFRAMES timeframe)
+{
+   // Improved history loading with error checking
+   datetime serverTime = TimeCurrent();
+   datetime fromTime = time > 0 ? time : serverTime - PeriodSeconds(timeframe) * 1000;
+   
+   int bars = Bars(symbol, timeframe, fromTime, serverTime);
+   if(bars < 100) // Ensure minimum history
+   {
+      int attempts = 0;
+      while(bars < 100 && attempts < 10)
+      {
+         Sleep(100);
+         bars = Bars(symbol, timeframe, fromTime, serverTime);
+         attempts++;
+      }
+      
+      if(bars < 100)
+         Print("WARNING: Limited history available: ", bars, " bars for ", symbol);
+   }
+}
+
 //+------------------------------------------------------------------+
