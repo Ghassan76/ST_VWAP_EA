@@ -339,7 +339,7 @@ double GetCachedSpread(bool forceUpdate = false)
    datetime currentTime = TimeCurrent();
    if(forceUpdate || currentTime > g_lastSpreadUpdate + 5) // Cache for 5 seconds
    {
-      g_cachedSpread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+      g_cachedSpread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
       g_lastSpreadUpdate = currentTime;
    }
    return g_cachedSpread;
