@@ -1,196 +1,315 @@
 //+------------------------------------------------------------------+
-//| Enhanced_ST_VWAP_Indicator.mq5 |
-//| Complete Enhanced SuperTrend with VWAP Filter & Advanced Dashboard |
+//|                                Enhanced_ST_VWAP_Indicator.mq5 |
+//|              Enhanced SuperTrend & VWAP with Advanced Analytics |
+//|                                         Performance Optimized  |
 //+------------------------------------------------------------------+
-#property copyright "Complete Enhanced SuperTrend with VWAP Filter & Dashboard © 2025"
-#property link "https://www.mql5.com"
-#property version "4.00"
+#property copyright "Enhanced ST&VWAP Indicator © 2025"
+#property link      "https://www.mql5.com"
+#property version   "2.00"
+#property description "Advanced SuperTrend with VWAP Filter, Performance Dashboard & Real-time Analytics"
+
 #property indicator_chart_window
-#property indicator_plots 3
-#property indicator_buffers 5
-#property indicator_type1 DRAW_COLOR_LINE
-#property indicator_style1 STYLE_SOLID
-#property indicator_width1 2
-#property indicator_color1 clrGreen, clrRed
+#property indicator_buffers 8
+#property indicator_plots   3
 
-#property indicator_type2 DRAW_LINE
-#property indicator_style2 STYLE_SOLID
-#property indicator_width2 2
-#property indicator_color2 clrYellow
+// Plot configurations
+#property indicator_type1   DRAW_COLOR_LINE
+#property indicator_color1  clrLime,clrRed
+#property indicator_style1  STYLE_SOLID
+#property indicator_width1  2
 
-#property indicator_type3 DRAW_NONE
+#property indicator_type2   DRAW_LINE
+#property indicator_color2  clrYellow
+#property indicator_style2  STYLE_SOLID
+#property indicator_width2  2
 
-//--- SuperTrend Input Parameters ---
-input group "=== SuperTrend Settings ==="
-input int ATRPeriod = 22;
-input double Multiplier = 3.0;
-input ENUM_APPLIED_PRICE SourcePrice = PRICE_MEDIAN;
-input bool TakeWicksIntoAccount = true;
+#property indicator_type3   DRAW_NONE
 
-//--- VWAP Input Parameters ---
-input group "=== VWAP Settings ==="
-input ENUM_APPLIED_PRICE VWAPPriceMethod = PRICE_TYPICAL;
-input double MinVolumeThreshold = 1.0;
-input bool ResetVWAPDaily = true;
+//+------------------------------------------------------------------+
+//| Performance Optimization Constants                               |
+//+------------------------------------------------------------------+
+#define MAX_DASHBOARD_ITEMS 50
+#define CALCULATION_CACHE_SIZE 100
+#define UPDATE_FREQUENCY_MS 1000
+#define MEMORY_CLEANUP_BARS 1000
 
-//--- VWAP Filter Settings ---
-input group "=== VWAP Filter Settings ==="
-input bool EnableVWAPFilter = true;
-input bool ShowVWAPLine = true;
+//+------------------------------------------------------------------+
+//| Input Parameters - Organized Groups                             |
+//+------------------------------------------------------------------+
+// SuperTrend Parameters
+input group "=== SUPERTREND SETTINGS ==="
+input int ATRPeriod = 22;                                    // ATR Period
+input double Multiplier = 3.0;                               // SuperTrend Multiplier
+input ENUM_APPLIED_PRICE SourcePrice = PRICE_MEDIAN;         // Price for SuperTrend
+input bool TakeWicksIntoAccount = true;                       // Include wicks in calculation
 
-//--- Time Window Settings ---
-input group "=== Time Window Settings ==="
-input bool EnableTimeWindow = false;
-input int StartHour = 9;
-input int StartMinute = 30;
-input int EndHour = 16;
-input int EndMinute = 0;
-enum TimeWindowMode
-{
-    MODE_DASHBOARD_ONLY = 0,
-    MODE_SIGNALS_ONLY = 1,
-    MODE_BOTH = 2
-};
-input TimeWindowMode WindowMode = MODE_DASHBOARD_ONLY;
+// VWAP Parameters
+input group "=== VWAP SETTINGS ==="
+input ENUM_APPLIED_PRICE VWAPPriceMethod = PRICE_TYPICAL;     // VWAP Price Method
+input double MinVolumeThreshold = 1.0;                       // Minimum Volume Threshold
+input bool ResetVWAPDaily = true;                             // Reset VWAP Daily
+input bool EnableVWAPFilter = true;                           // Enable VWAP Filtering
+input bool ShowVWAPLine = true;                               // Show VWAP Line
 
-//--- Performance Settings ---
-input group "=== Performance & Win Rate Settings ==="
-input bool EnableWinRate = true;
-input double WinThresholdPoints = 100.0;
-input bool FilterSignalsOnClose = true;
+// Advanced Analytics
+input group "=== ADVANCED ANALYTICS ==="
+input bool EnableAdvancedAnalytics = true;                   // Enable Advanced Analytics
+input bool EnablePerformanceTracking = true;                 // Enable Performance Tracking
+input bool EnableMarketStateAnalysis = true;                 // Enable Market State Analysis
+input int AnalysisLookback = 500;                            // Bars for analysis
+input double VolatilityThreshold = 1.5;                      // Volatility threshold multiplier
 
-//--- Dashboard Settings ---
-input group "=== Dashboard Settings ==="
-input bool ShowDashboard = true;
-input int DashboardX = 20;
-input int DashboardY = 50;
-input string DashboardFont = "Arial Black";
-input int LabelFontSize = 9;
-input int ValueFontSize = 8;
-input color DashboardBgColor = clrBlack;
-input color DashboardBorderColor = clrWhite;
-input color DashboardTextColor = clrWhite;
-input int LabelXOffset = 5;
-input int ValueXOffset = 180;
+// Signal Processing
+input group "=== SIGNAL PROCESSING ==="
+input bool FilterSignalsOnClose = true;                      // Only signals on bar close
+input bool RequireVWAPConfirmation = true;                   // Require VWAP confirmation
+input double MinPointsFromVWAP = 50.0;                       // Min distance from VWAP (points)
+input int SignalCooldownBars = 3;                            // Bars between signals
 
-//--- Visual Feedback Settings ---
-input group "=== Visual Feedback Settings ==="
-input bool EnableVisualFeedback = true;
-input int CircleWidth = 2;
-input color RejectionColor = clrGray;
-input color BullishAcceptColor = clrBlue;
-input color BearishAcceptColor = clrWhite;
-input int SignalLifetimeBars = 200;
+// Performance Settings
+input group "=== PERFORMANCE SETTINGS ==="
+input bool EnableWinRate = true;                             // Enable Win Rate Calculation
+input double WinThresholdPoints = 10.0;                      // Win threshold in points
+input int MaxSignalHistory = 1000;                           // Maximum signals to track
+input bool EnableRealTimeUpdates = true;                     // Real-time dashboard updates
 
-//--- Advanced Settings ---
-input group "=== Advanced Settings ==="
-input bool ShowDebugInfo = false;
-input int MaxObjectsOnChart = 500;
+// Dashboard Configuration
+input group "=== DASHBOARD SETTINGS ==="
+input bool ShowDashboard = true;                             // Show Performance Dashboard
+input int DashboardX = 20;                                   // Dashboard X Position
+input int DashboardY = 30;                                   // Dashboard Y Position
+input int DashboardWidth = 420;                              // Dashboard Width
+input int DashboardHeight = 500;                             // Dashboard Height
+input color DashboardBgColor = C'25,25,25';                  // Background Color
+input color DashboardBorderColor = clrDarkSlateGray;         // Border Color
+input color DashboardTextColor = clrWhite;                   // Text Color
 
-//--- Alert Settings ---
-input group "=== Alert Settings ==="
-input bool EnableAlerts = false;
-input bool AlertPopup = true;
-input string AlertSoundFile = "alert.wav";
+// Layout Settings
+input group "=== LAYOUT SETTINGS ==="
+input string DashboardFont = "Consolas";                     // Dashboard Font
+input int LabelFontSize = 9;                                 // Label Font Size
+input int ValueFontSize = 9;                                 // Value Font Size
+input int LabelXOffset = 15;                                 // Label Column X Offset
+input int ValueXOffset = 280;                                // Value Column X Offset
+input color AccentColor = clrDodgerBlue;                     // Accent Color
+input color SuccessColor = clrLimeGreen;                     // Success Color
+input color WarningColor = clrOrange;                        // Warning Color
+input color ErrorColor = clrTomato;                          // Error Color
 
-//--- Dashboard State Enumeration ---
+// Advanced Display
+input group "=== ADVANCED DISPLAY ==="
+input bool ShowMarketState = true;                           // Show Market State
+input bool ShowVolatilityMeter = true;                       // Show Volatility Meter
+input bool ShowTrendStrength = true;                         // Show Trend Strength
+input bool ShowSignalQuality = true;                         // Show Signal Quality
+input bool ShowPerformanceMetrics = true;                    // Show Performance Metrics
+input bool ShowRealTimeStats = true;                         // Show Real-time Statistics
+
+// Alert Settings
+input group "=== ALERT SETTINGS ==="
+input bool EnableAlerts = false;                             // Enable Alert System
+input bool AlertPopup = true;                                // Show Popup Alerts
+input bool AlertSound = true;                                // Play Sound Alerts
+input string AlertSoundFile = "alert.wav";                   // Alert Sound File
+
+// Visual Feedback
+input group "=== VISUAL FEEDBACK ==="
+input bool EnableVisualFeedback = true;                      // Enable Visual Signals
+input int CircleWidth = 2;                                   // Signal Circle Width
+input color BullishSignalColor = clrDodgerBlue;              // Bullish Signal Color
+input color BearishSignalColor = clrOrangeRed;               // Bearish Signal Color
+input color RejectedSignalColor = clrGray;                   // Rejected Signal Color
+input int SignalLifetimeBars = 200;                          // Signal Display Duration
+
+//+------------------------------------------------------------------+
+//| Enhanced Enumerations                                            |
+//+------------------------------------------------------------------+
 enum DASHBOARD_STATE
 {
     STATE_NO_SIGNAL = 0,
     STATE_BULLISH = 1,
-    STATE_BEARISH = -1
+    STATE_BEARISH = -1,
+    STATE_NEUTRAL = 2
 };
 
-//--- Signal Segment Structure ---
+enum MARKET_STATE
+{
+    MARKET_UNKNOWN = 0,
+    MARKET_TRENDING_UP = 1,
+    MARKET_TRENDING_DOWN = -1,
+    MARKET_RANGING = 2,
+    MARKET_VOLATILE = 3,
+    MARKET_QUIET = 4
+};
+
+enum SIGNAL_QUALITY
+{
+    QUALITY_UNKNOWN = 0,
+    QUALITY_EXCELLENT = 4,
+    QUALITY_GOOD = 3,
+    QUALITY_FAIR = 2,
+    QUALITY_POOR = 1
+};
+
+//+------------------------------------------------------------------+
+//| Advanced Structures                                              |
+//+------------------------------------------------------------------+
 struct SignalSegment
 {
-    int direction;          // 1 for bullish, -1 for bearish
-    double entryPrice;      // Entry price
-    datetime startTime;     // Signal start time
-    int startBar;          // Signal start bar
-    double reachedPoints;   // Maximum favorable excursion in points
-    bool isWin;            // Whether this segment reached the win threshold
-    bool finalized;        // Whether this segment is complete
-    bool inWindow;         // Whether this segment started in time window
+    int direction;              // 1 for bullish, -1 for bearish
+    double entryPrice;          // Signal entry price
+    datetime startTime;         // Signal start time
+    int startBar;              // Signal start bar
+    double reachedPoints;       // Maximum favorable excursion
+    double reachedPercent;      // Percentage move achieved
+    bool isWin;                // Win/loss status
+    bool finalized;            // Whether segment is complete
+    SIGNAL_QUALITY quality;     // Signal quality rating
+    double vwapDistance;       // Distance from VWAP at signal
+    double volatility;         // Market volatility at signal
+    double trendStrength;      // Trend strength at signal
 };
 
-//--- Indicator Handles ---
-int atrHandle;
-
-//--- Indicator Buffers ---
-double SuperTrendBuffer[];
-double SuperTrendColorBuffer[];
-double VWAPBuffer[];
-double SuperTrendDirectionBuffer[];
-double SignalBuffer[];
-
-//--- Global VWAP Variables ---
-datetime g_currentDay = 0;
-double g_sumPriceVolume = 0.0;
-double g_sumVolume = 0.0;
-datetime g_lastAlertTime = 0;
-
-//--- Dashboard Variables ---
-struct DashboardStats
+struct PerformanceMetrics
 {
-    // Basic counts (window-filtered if enabled)
+    // Basic Statistics
     int totalSignals;
     int bullishSignals;
     int bearishSignals;
     int acceptedSignals;
     int rejectedSignals;
     
-    // Performance metrics
+    // Performance Metrics
     double winRate;
     int wins;
     int losses;
+    double avgWinPoints;
+    double avgLossPoints;
+    double profitFactor;
+    double sharpeRatio;
     
-    // Current values
-    double currentPrice;
-    double currentSuperTrend;
-    double currentVWAP;
-    DASHBOARD_STATE dashboardState;
+    // Advanced Metrics
+    double maxConsecutiveWins;
+    double maxConsecutiveLosses;
+    double currentStreak;
+    double avgSignalQuality;
+    double bestSignalPoints;
+    double worstSignalPoints;
     
-    // Last signal info (window-filtered)
-    string lastSignalTime;
-    double lastSignalReachedPoints;
+    // Time-based Metrics
+    double avgBullishDuration;
+    double avgBearishDuration;
+    datetime lastSignalTime;
+    int signalsPerDay;
     
-    // Averages (window-filtered)
-    double avgBluePoints;
-    double avgWhitePoints;
-    double avgAllPoints;
-    
-    // Session info
-    datetime sessionStart;
-    int barsProcessed;
-    bool inTimeWindow;
-    string windowStatus;
+    // Market Context
+    MARKET_STATE marketState;
+    double trendStrength;
+    double volatilityIndex;
+    double signalReliability;
 };
 
-DashboardStats g_stats;
-bool g_dashboardCreated = false;
+struct MarketConditions
+{
+    double currentPrice;
+    double priceChange;
+    double priceChangePercent;
+    double volatility;
+    double trendStrength;
+    MARKET_STATE state;
+    double momentum;
+    double averageVolume;
+    double spreadCost;
+    datetime lastUpdate;
+};
 
-//--- Signal Tracking ---
-SignalSegment g_signalSegments[];
-int g_segmentCount = 0;
-SignalSegment g_currentSegment;
-bool g_hasActiveSegment = false;
+struct DashboardData
+{
+    // Current Values
+    double currentSuperTrend;
+    double currentVWAP;
+    DASHBOARD_STATE currentState;
+    
+    // Market Analysis
+    MarketConditions market;
+    
+    // Performance Data
+    PerformanceMetrics performance;
+    
+    // Real-time Data
+    int barsProcessed;
+    datetime sessionStart;
+    string status;
+    double systemLoad;
+};
 
 //+------------------------------------------------------------------+
-//| Custom indicator initialization function |
+//| Indicator Handles and Buffers                                   |
+//+------------------------------------------------------------------+
+int atrHandle;
+
+// Main Indicator Buffers
+double SuperTrendBuffer[];
+double SuperTrendColorBuffer[];
+double VWAPBuffer[];
+double SuperTrendDirectionBuffer[];
+double SignalBuffer[];
+
+// Analysis Buffers (Hidden)
+double VolatilityBuffer[];
+double TrendStrengthBuffer[];
+double SignalQualityBuffer[];
+
+//+------------------------------------------------------------------+
+//| Global Variables with Optimization                              |
+//+------------------------------------------------------------------+
+// VWAP Calculation Variables
+datetime g_currentDay = 0;
+double g_sumPriceVolume = 0.0;
+double g_sumVolume = 0.0;
+
+// Signal Tracking
+SignalSegment g_signalHistory[];
+int g_signalCount = 0;
+SignalSegment g_currentSegment;
+bool g_hasActiveSegment = false;
+datetime g_lastSignalTime = 0;
+int g_signalCooldown = 0;
+
+// Performance Tracking
+DashboardData g_dashboardData;
+bool g_dashboardCreated = false;
+datetime g_lastUpdate = 0;
+datetime g_lastAlertTime = 0;
+
+// Optimization Variables
+static double g_priceCache[];
+static datetime g_cacheTime = 0;
+static int g_cacheSize = 0;
+
+//+------------------------------------------------------------------+
+//| Custom indicator initialization function                         |
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    // Validate inputs
+    if(ATRPeriod <= 0 || Multiplier <= 0.0)
+    {
+        Print("ERROR: Invalid SuperTrend parameters");
+        return INIT_PARAMETERS_INCORRECT;
+    }
+    
+    if(AnalysisLookback <= 0 || MaxSignalHistory <= 0)
+    {
+        Print("ERROR: Invalid analysis parameters");
+        return INIT_PARAMETERS_INCORRECT;
+    }
+    
+    // Initialize ATR handle
     atrHandle = iATR(NULL, 0, ATRPeriod);
     if(atrHandle == INVALID_HANDLE)
     {
-        Print("Error creating ATR indicator. Error code: ", GetLastError());
-        return INIT_FAILED;
-    }
-    
-    if(ATRPeriod <= 0 || Multiplier <= 0.0 || MaxObjectsOnChart <= 0)
-    {
-        Print("Error: Invalid input parameters");
+        Print("ERROR: Failed to create ATR indicator");
         return INIT_FAILED;
     }
     
@@ -200,6 +319,9 @@ int OnInit()
     SetIndexBuffer(2, VWAPBuffer, INDICATOR_DATA);
     SetIndexBuffer(3, SuperTrendDirectionBuffer, INDICATOR_CALCULATIONS);
     SetIndexBuffer(4, SignalBuffer, INDICATOR_CALCULATIONS);
+    SetIndexBuffer(5, VolatilityBuffer, INDICATOR_CALCULATIONS);
+    SetIndexBuffer(6, TrendStrengthBuffer, INDICATOR_CALCULATIONS);
+    SetIndexBuffer(7, SignalQualityBuffer, INDICATOR_CALCULATIONS);
     
     // Configure plotting
     PlotIndexSetString(0, PLOT_LABEL, "SuperTrend");
@@ -221,39 +343,47 @@ int OnInit()
     ArraySetAsSeries(VWAPBuffer, false);
     ArraySetAsSeries(SuperTrendDirectionBuffer, false);
     ArraySetAsSeries(SignalBuffer, false);
+    ArraySetAsSeries(VolatilityBuffer, false);
+    ArraySetAsSeries(TrendStrengthBuffer, false);
+    ArraySetAsSeries(SignalQualityBuffer, false);
     
-    // Initialize dashboard stats
-    InitializeDashboardStats();
+    // Initialize data structures
+    InitializeDataStructures();
     
-    // Set indicator name
+    // Set indicator properties
     string indicatorName = StringFormat("Enhanced ST&VWAP (ATR:%d, Mult:%.1f)", ATRPeriod, Multiplier);
     IndicatorSetString(INDICATOR_SHORTNAME, indicatorName);
     IndicatorSetInteger(INDICATOR_DIGITS, _Digits);
     
-    Print("Enhanced ST&VWAP Indicator initialized successfully");
+    Print("Enhanced SuperTrend & VWAP Indicator initialized successfully");
     return INIT_SUCCEEDED;
 }
 
 //+------------------------------------------------------------------+
-//| Custom indicator deinitialization function |
+//| Custom indicator deinitialization function                      |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+    // Clean up handles
     if(atrHandle != INVALID_HANDLE)
         IndicatorRelease(atrHandle);
-        
-    // Clean up dashboard objects
+    
+    // Clean up dashboard
     CleanupDashboard();
     
-    // Clean up visual feedback objects
+    // Clean up visual objects
     if(EnableVisualFeedback)
         CleanupVisualObjects();
-        
-    Print("Enhanced ST&VWAP Indicator deinitialized");
+    
+    // Save performance data (optional)
+    if(EnablePerformanceTracking)
+        SavePerformanceData();
+    
+    Print("Enhanced SuperTrend & VWAP Indicator deinitialized");
 }
 
 //+------------------------------------------------------------------+
-//| Custom indicator iteration function |
+//| Custom indicator iteration function                              |
 //+------------------------------------------------------------------+
 int OnCalculate(
     const int rates_total,
@@ -269,8 +399,9 @@ int OnCalculate(
 )
 {
     if(rates_total < ATRPeriod + 1)
-        return(0);
+        return 0;
     
+    // Set array indexing
     ArraySetAsSeries(time, false);
     ArraySetAsSeries(open, false);
     ArraySetAsSeries(high, false);
@@ -278,700 +409,900 @@ int OnCalculate(
     ArraySetAsSeries(close, false);
     ArraySetAsSeries(tick_volume, false);
     
+    // Prepare ATR buffer
     double atrBuffer[];
     ArraySetAsSeries(atrBuffer, false);
     
-    int start = (prev_calculated > ATRPeriod) ? prev_calculated - 1 : ATRPeriod;
+    // Determine calculation start
+    int start = MathMax(prev_calculated - 1, ATRPeriod);
+    if(prev_calculated == 0)
+        start = ATRPeriod;
     
-    for(int i = start; i < rates_total; i++)
+    // Main calculation loop
+    for(int i = start; i < rates_total && !IsStopped(); i++)
     {
-        CalculateVWAPForBar(i, time, open, high, low, close, tick_volume);
+        // Calculate VWAP for current bar
+        CalculateAdvancedVWAP(i, time, open, high, low, close, tick_volume);
         
-        double srcPrice;
-        switch(SourcePrice)
-        {
-            case PRICE_CLOSE: srcPrice = close[i]; break;
-            case PRICE_OPEN: srcPrice = open[i]; break;
-            case PRICE_HIGH: srcPrice = high[i]; break;
-            case PRICE_LOW: srcPrice = low[i]; break;
-            case PRICE_MEDIAN: srcPrice = (high[i] + low[i]) / 2.0; break;
-            case PRICE_TYPICAL: srcPrice = (high[i] + low[i] + close[i]) / 3.0; break;
-            default: srcPrice = (high[i] + low[i] + close[i] + close[i]) / 4.0; break;
-        }
+        // Get source price
+        double srcPrice = GetSourcePrice(i, open, high, low, close);
         
+        // Get price extremes
         double highPrice = TakeWicksIntoAccount ? high[i] : MathMax(open[i], close[i]);
         double lowPrice = TakeWicksIntoAccount ? low[i] : MathMin(open[i], close[i]);
         
-        double atr;
-        if(CopyBuffer(atrHandle, 0, rates_total - i - 1, 1, atrBuffer) == -1)
-            atr = srcPrice * 0.01;
-        else
-            atr = atrBuffer[0];
+        // Get ATR value
+        double atr = GetATRValue(i, rates_total, srcPrice);
         
-        if(atr <= 0.0)
-            atr = srcPrice * 0.01;
-        
+        // Calculate SuperTrend levels
         double longStop = srcPrice - Multiplier * atr;
         double shortStop = srcPrice + Multiplier * atr;
         
+        // Apply SuperTrend logic with previous values
         if(i > 0)
         {
-            double longStopPrev = (SuperTrendDirectionBuffer[i-1] == 1) ? SuperTrendBuffer[i-1] : longStop;
-            double shortStopPrev = (SuperTrendDirectionBuffer[i-1] == -1) ? SuperTrendBuffer[i-1] : shortStop;
-            
-            if(!(open[i] == close[i] && open[i] == low[i] && open[i] == high[i]))
-            {
-                longStop = (lowPrice > longStopPrev) ? MathMax(longStop, longStopPrev) : longStop;
-                shortStop = (highPrice < shortStopPrev) ? MathMin(shortStop, shortStopPrev) : shortStop;
-            }
-            else
-            {
-                longStop = longStopPrev;
-                shortStop = shortStopPrev;
-            }
+            ApplySuperTrendLogic(i, longStop, shortStop, highPrice, lowPrice, open, close);
         }
         
-        int supertrend_dir = 1;
-        if(i > 0)
-        {
-            int prev_dir = (int)SuperTrendDirectionBuffer[i-1];
-            supertrend_dir = prev_dir;
-            
-            if(supertrend_dir == -1 && highPrice > SuperTrendBuffer[i-1])
-            {
-                supertrend_dir = 1;
-                bool vwapOk = !EnableVWAPFilter || (VWAPBuffer[i] > 0 && close[i] > VWAPBuffer[i]);
-                
-                if(ShouldGenerateSignals(time[i]))
-                {
-                    ProcessSignal(i, time[i], close[i], 1, vwapOk, lowPrice, highPrice, high, low, rates_total);
-                }
-            }
-            else if(supertrend_dir == 1 && lowPrice < SuperTrendBuffer[i-1])
-            {
-                supertrend_dir = -1;
-                bool vwapOk = !EnableVWAPFilter || (VWAPBuffer[i] > 0 && close[i] < VWAPBuffer[i]);
-                
-                if(ShouldGenerateSignals(time[i]))
-                {
-                    ProcessSignal(i, time[i], close[i], -1, vwapOk, lowPrice, highPrice, high, low, rates_total);
-                }
-            }
-        }
+        // Determine SuperTrend direction and values
+        int supertrendDir = CalculateSuperTrendDirection(i, highPrice, lowPrice);
         
-        if(supertrend_dir == 1)
+        // Set buffer values
+        if(supertrendDir == 1)
         {
             SuperTrendBuffer[i] = longStop;
             SuperTrendDirectionBuffer[i] = 1;
-            SuperTrendColorBuffer[i] = 0;
+            SuperTrendColorBuffer[i] = 0; // Bullish color
         }
         else
         {
             SuperTrendBuffer[i] = shortStop;
             SuperTrendDirectionBuffer[i] = -1;
-            SuperTrendColorBuffer[i] = 1;
+            SuperTrendColorBuffer[i] = 1; // Bearish color
         }
         
-        SignalBuffer[i] = 0;
-        g_stats.barsProcessed = i + 1;
-        
-        // Update current segment reach for active segments
-        UpdateCurrentSegmentReach(i, high, low);
-    }
-    
-    // Update current values for dashboard
-    if(rates_total > 0)
-    {
-        int lastBar = rates_total - 1;
-        g_stats.currentPrice = close[lastBar];
-        g_stats.currentSuperTrend = SuperTrendBuffer[lastBar];
-        g_stats.currentVWAP = VWAPBuffer[lastBar];
-        
-        // Update time window status
-        g_stats.inTimeWindow = IsInTimeWindow(time[lastBar]);
-        if(EnableTimeWindow)
+        // Calculate advanced analytics
+        if(EnableAdvancedAnalytics)
         {
-            g_stats.windowStatus = g_stats.inTimeWindow ? "ACTIVE" : "OUT OF WINDOW";
+            CalculateAdvancedMetrics(i, high, low, close, tick_volume);
         }
-        else
+        
+        // Process signals
+        ProcessEnhancedSignals(i, time[i], close[i], supertrendDir, high, low, rates_total);
+        
+        // Update real-time data
+        if(i == rates_total - 1 && EnableRealTimeUpdates)
         {
-            g_stats.windowStatus = "ACTIVE";
+            UpdateRealTimeData(i, time, close, high, low);
         }
     }
     
-    // Update averages and win rate
-    UpdateAverages();
-    
-    // Create and update dashboard based on time window rules
-    if(ShowDashboard && ShouldUpdateDashboard(rates_total > 0 ? time[rates_total-1] : TimeCurrent()))
+    // Update dashboard
+    if(ShowDashboard && ShouldUpdateDashboard())
     {
-        CreateDashboard();
-        UpdateDashboard();
-    }
-    else if(ShowDashboard && EnableTimeWindow)
-    {
-        // Show idle dashboard outside window
-        CreateDashboard();
-        UpdateIdleDashboard();
+        UpdateAdvancedDashboard(rates_total, time, close);
     }
     
-    if(EnableVisualFeedback)
-        CleanOldObjects(time, rates_total);
+    // Clean up old visual objects
+    if(EnableVisualFeedback && rates_total > SignalLifetimeBars)
+    {
+        CleanupOldObjects(time, rates_total);
+    }
     
-    return(rates_total - 1);
+    return rates_total;
 }
 
 //+------------------------------------------------------------------+
-//| Initialize dashboard statistics |
+//| Initialize Data Structures                                       |
 //+------------------------------------------------------------------+
-void InitializeDashboardStats()
+void InitializeDataStructures()
 {
-    g_stats.totalSignals = 0;
-    g_stats.bullishSignals = 0;
-    g_stats.bearishSignals = 0;
-    g_stats.acceptedSignals = 0;
-    g_stats.rejectedSignals = 0;
-    g_stats.winRate = 0.0;
-    g_stats.wins = 0;
-    g_stats.losses = 0;
-    g_stats.currentPrice = 0.0;
-    g_stats.currentSuperTrend = 0.0;
-    g_stats.currentVWAP = 0.0;
-    g_stats.dashboardState = STATE_NO_SIGNAL;
-    g_stats.lastSignalTime = "None";
-    g_stats.lastSignalReachedPoints = 0.0;
-    g_stats.avgBluePoints = 0.0;
-    g_stats.avgWhitePoints = 0.0;
-    g_stats.avgAllPoints = 0.0;
-    g_stats.sessionStart = TimeCurrent();
-    g_stats.barsProcessed = 0;
-    g_stats.inTimeWindow = false;
-    g_stats.windowStatus = "INITIALIZING";
-    
-    g_segmentCount = 0;
-    ArrayResize(g_signalSegments, 0);
+    // Initialize signal history
+    ArrayResize(g_signalHistory, MaxSignalHistory);
+    g_signalCount = 0;
     g_hasActiveSegment = false;
+    
+    // Initialize dashboard data
+    ZeroMemory(g_dashboardData);
+    g_dashboardData.sessionStart = TimeCurrent();
+    g_dashboardData.performance.marketState = MARKET_UNKNOWN;
+    g_dashboardData.status = "Initializing...";
+    
+    // Initialize cache
+    ArrayResize(g_priceCache, CALCULATION_CACHE_SIZE);
+    g_cacheSize = 0;
+    
+    g_dashboardCreated = false;
 }
 
 //+------------------------------------------------------------------+
-//| Calculate VWAP for a specific bar |
+//| Advanced VWAP Calculation                                        |
 //+------------------------------------------------------------------+
-void CalculateVWAPForBar(int bar, const datetime& time[], const double& open[], 
-                        const double& high[], const double& low[], const double& close[], 
-                        const long& tick_volume[])
+void CalculateAdvancedVWAP(int bar, const datetime& time[], const double& open[], 
+                          const double& high[], const double& low[], const double& close[], 
+                          const long& tick_volume[])
 {
-    MqlDateTime timeStruct;
-    TimeToStruct(time[bar], timeStruct);
-    
-    datetime currentDay = StringToTime(StringFormat("%04d.%02d.%02d", timeStruct.year, timeStruct.mon, timeStruct.day));
-    
-    if(ResetVWAPDaily && currentDay != g_currentDay)
+    // Handle daily reset
+    if(ResetVWAPDaily)
     {
-        g_currentDay = currentDay;
-        g_sumPriceVolume = 0.0;
-        g_sumVolume = 0.0;
+        MqlDateTime timeStruct;
+        TimeToStruct(time[bar], timeStruct);
+        datetime currentDay = StringToTime(StringFormat("%04d.%02d.%02d", 
+                                          timeStruct.year, timeStruct.mon, timeStruct.day));
+        
+        if(currentDay != g_currentDay)
+        {
+            g_currentDay = currentDay;
+            g_sumPriceVolume = 0.0;
+            g_sumVolume = 0.0;
+        }
     }
     
-    double price;
-    switch(VWAPPriceMethod)
-    {
-        case PRICE_CLOSE: price = close[bar]; break;
-        case PRICE_OPEN: price = open[bar]; break;
-        case PRICE_HIGH: price = high[bar]; break;
-        case PRICE_LOW: price = low[bar]; break;
-        case PRICE_MEDIAN: price = (high[bar] + low[bar]) / 2.0; break;
-        case PRICE_TYPICAL: price = (high[bar] + low[bar] + close[bar]) / 3.0; break;
-        default: price = (high[bar] + low[bar] + close[bar] + close[bar]) / 4.0; break;
-    }
+    // Get price based on method
+    double price = GetVWAPPrice(bar, open, high, low, close);
     
-    double volume = (double)tick_volume[bar];
-    if(volume < MinVolumeThreshold)
-        volume = MinVolumeThreshold;
+    // Get volume with minimum threshold
+    double vol = (double)tick_volume[bar];
+    if(vol < MinVolumeThreshold)
+        vol = MinVolumeThreshold;
     
-    g_sumPriceVolume += price * volume;
-    g_sumVolume += volume;
+    // Update VWAP calculation
+    g_sumPriceVolume += price * vol;
+    g_sumVolume += vol;
     
     VWAPBuffer[bar] = (g_sumVolume > 0) ? (g_sumPriceVolume / g_sumVolume) : price;
+    
+    // Store in market conditions
+    g_dashboardData.market.averageVolume = g_sumVolume / MathMax(1, bar + 1);
 }
 
 //+------------------------------------------------------------------+
-//| Check if signals should be generated |
+//| Get VWAP Price Method                                           |
 //+------------------------------------------------------------------+
-bool ShouldGenerateSignals(datetime signalTime)
+double GetVWAPPrice(int bar, const double& open[], const double& high[], 
+                   const double& low[], const double& close[])
 {
-    if(!EnableTimeWindow)
-        return true;
-        
-    bool inWindow = IsInTimeWindow(signalTime);
-    
-    switch(WindowMode)
+    switch(VWAPPriceMethod)
     {
-        case MODE_DASHBOARD_ONLY: return true;
-        case MODE_SIGNALS_ONLY: return inWindow;
-        case MODE_BOTH: return inWindow;
+        case PRICE_OPEN: return open[bar];
+        case PRICE_HIGH: return high[bar];
+        case PRICE_LOW: return low[bar];
+        case PRICE_CLOSE: return close[bar];
+        case PRICE_MEDIAN: return (high[bar] + low[bar]) / 2.0;
+        case PRICE_TYPICAL: return (high[bar] + low[bar] + close[bar]) / 3.0;
+        case PRICE_WEIGHTED: return (high[bar] + low[bar] + 2.0 * close[bar]) / 4.0;
+        default: return close[bar];
     }
-    
-    return true;
 }
 
 //+------------------------------------------------------------------+
-//| Check if dashboard should be updated |
+//| Get Source Price for SuperTrend                                 |
 //+------------------------------------------------------------------+
-bool ShouldUpdateDashboard(datetime currentTime)
+double GetSourcePrice(int bar, const double& open[], const double& high[], 
+                     const double& low[], const double& close[])
 {
-    if(!EnableTimeWindow)
-        return true;
-        
-    bool inWindow = IsInTimeWindow(currentTime);
-    
-    switch(WindowMode)
+    switch(SourcePrice)
     {
-        case MODE_DASHBOARD_ONLY: return true;
-        case MODE_SIGNALS_ONLY: return true;
-        case MODE_BOTH: return inWindow;
+        case PRICE_CLOSE: return close[bar];
+        case PRICE_OPEN: return open[bar];
+        case PRICE_HIGH: return high[bar];
+        case PRICE_LOW: return low[bar];
+        case PRICE_MEDIAN: return (high[bar] + low[bar]) / 2.0;
+        case PRICE_TYPICAL: return (high[bar] + low[bar] + close[bar]) / 3.0;
+        case PRICE_WEIGHTED: return (high[bar] + low[bar] + 2.0 * close[bar]) / 4.0;
+        default: return close[bar];
     }
-    
-    return true;
 }
 
 //+------------------------------------------------------------------+
-//| Check if current time is in trading window |
+//| Get ATR Value with Error Handling                               |
 //+------------------------------------------------------------------+
-bool IsInTimeWindow(datetime checkTime)
+double GetATRValue(int bar, int rates_total, double srcPrice)
 {
-    if(!EnableTimeWindow)
-        return true;
-        
-    MqlDateTime timeStruct;
-    TimeToStruct(checkTime, timeStruct);
+    double atr;
+    double atrBuffer[];
     
-    int currentMinutes = timeStruct.hour * 60 + timeStruct.min;
-    int startMinutes = StartHour * 60 + StartMinute;
-    int endMinutes = EndHour * 60 + EndMinute;
-    
-    if(startMinutes <= endMinutes)
+    if(CopyBuffer(atrHandle, 0, rates_total - bar - 1, 1, atrBuffer) > 0)
     {
-        return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+        atr = atrBuffer[0];
     }
     else
     {
-        return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+        atr = srcPrice * 0.01; // Fallback ATR
+    }
+    
+    if(atr <= 0.0)
+        atr = srcPrice * 0.01;
+    
+    return atr;
+}
+
+//+------------------------------------------------------------------+
+//| Apply SuperTrend Logic                                           |
+//+------------------------------------------------------------------+
+void ApplySuperTrendLogic(int bar, double& longStop, double& shortStop, 
+                         double highPrice, double lowPrice, const double& open[], const double& close[])
+{
+    double longStopPrev = (SuperTrendDirectionBuffer[bar-1] == 1) ? SuperTrendBuffer[bar-1] : longStop;
+    double shortStopPrev = (SuperTrendDirectionBuffer[bar-1] == -1) ? SuperTrendBuffer[bar-1] : shortStop;
+    
+    // Check for doji or gap (avoid false signals)
+    if(!(open[bar] == close[bar] && open[bar] == lowPrice && open[bar] == highPrice))
+    {
+        longStop = (lowPrice > longStopPrev) ? MathMax(longStop, longStopPrev) : longStop;
+        shortStop = (highPrice < shortStopPrev) ? MathMin(shortStop, shortStopPrev) : shortStop;
+    }
+    else
+    {
+        longStop = longStopPrev;
+        shortStop = shortStopPrev;
     }
 }
 
 //+------------------------------------------------------------------+
-//| Process signal detection |
+//| Calculate SuperTrend Direction                                   |
 //+------------------------------------------------------------------+
-void ProcessSignal(int bar, datetime signalTime, double signalPrice, int direction, 
-                  bool vwapOk, double lowPrice, double highPrice, 
-                  const double& high[], const double& low[], int rates_total)
+int CalculateSuperTrendDirection(int bar, double highPrice, double lowPrice)
 {
-    bool inWindow = IsInTimeWindow(signalTime);
+    if(bar == 0)
+        return 1; // Default to bullish
+    
+    int prevDir = (int)SuperTrendDirectionBuffer[bar-1];
+    int supertrendDir = prevDir;
+    
+    // Check for direction change
+    if(supertrendDir == -1 && highPrice > SuperTrendBuffer[bar-1])
+    {
+        supertrendDir = 1;
+    }
+    else if(supertrendDir == 1 && lowPrice < SuperTrendBuffer[bar-1])
+    {
+        supertrendDir = -1;
+    }
+    
+    return supertrendDir;
+}
+
+//+------------------------------------------------------------------+
+//| Calculate Advanced Metrics                                       |
+//+------------------------------------------------------------------+
+void CalculateAdvancedMetrics(int bar, const double& high[], const double& low[], 
+                             const double& close[], const long& tick_volume[])
+{
+    // Calculate volatility (normalized ATR)
+    if(bar >= ATRPeriod)
+    {
+        double atr = GetATRValue(bar, bar + 1, close[bar]);
+        double normalizedVolatility = (atr / close[bar]) * 100.0;
+        VolatilityBuffer[bar] = normalizedVolatility;
+        
+        g_dashboardData.market.volatility = normalizedVolatility;
+    }
+    
+    // Calculate trend strength
+    if(bar >= 20) // Minimum bars for trend calculation
+    {
+        double trendStrength = CalculateTrendStrength(bar, close);
+        TrendStrengthBuffer[bar] = trendStrength;
+        
+        g_dashboardData.market.trendStrength = trendStrength;
+    }
+    
+    // Update market state
+    UpdateMarketState(bar);
+}
+
+//+------------------------------------------------------------------+
+//| Calculate Trend Strength                                         |
+//+------------------------------------------------------------------+
+double CalculateTrendStrength(int bar, const double& close[])
+{
+    int lookback = MathMin(20, bar);
+    if(lookback < 5) return 0.0;
+    
+    double sumUp = 0, sumDown = 0;
+    
+    for(int i = bar - lookback + 1; i <= bar; i++)
+    {
+        if(i > 0)
+        {
+            double change = close[i] - close[i-1];
+            if(change > 0)
+                sumUp += change;
+            else
+                sumDown -= change; // Make positive
+        }
+    }
+    
+    double totalChange = sumUp + sumDown;
+    if(totalChange == 0) return 0.0;
+    
+    double trendStrength = (sumUp - sumDown) / totalChange;
+    return NormalizeDouble(trendStrength * 100.0, 2); // Convert to percentage
+}
+
+//+------------------------------------------------------------------+
+//| Update Market State                                              |
+//+------------------------------------------------------------------+
+void UpdateMarketState(int bar)
+{
+    double volatility = VolatilityBuffer[bar];
+    double trendStrength = TrendStrengthBuffer[bar];
+    
+    // Determine market state based on volatility and trend strength
+    if(MathAbs(trendStrength) > 60.0)
+    {
+        g_dashboardData.market.state = (trendStrength > 0) ? MARKET_TRENDING_UP : MARKET_TRENDING_DOWN;
+    }
+    else if(volatility > VolatilityThreshold)
+    {
+        g_dashboardData.market.state = MARKET_VOLATILE;
+    }
+    else if(volatility < VolatilityThreshold * 0.3)
+    {
+        g_dashboardData.market.state = MARKET_QUIET;
+    }
+    else
+    {
+        g_dashboardData.market.state = MARKET_RANGING;
+    }
+    
+    g_dashboardData.performance.marketState = g_dashboardData.market.state;
+}
+
+//+------------------------------------------------------------------+
+//| Process Enhanced Signals                                         |
+//+------------------------------------------------------------------+
+void ProcessEnhancedSignals(int bar, datetime barTime, double price, int direction, 
+                           const double& high[], const double& low[], int rates_total)
+{
+    // Check signal cooldown
+    if(g_signalCooldown > 0)
+    {
+        g_signalCooldown--;
+        return;
+    }
+    
+    // Check for direction change (signal generation)
+    bool isSignal = false;
+    if(bar > 0)
+    {
+        int prevDir = (int)SuperTrendDirectionBuffer[bar-1];
+        if(direction != prevDir)
+        {
+            isSignal = true;
+        }
+    }
+    
+    if(!isSignal) return;
+    
+    // Apply filters
+    bool vwapOK = !RequireVWAPConfirmation || 
+                 (VWAPBuffer[bar] != 0 && VWAPBuffer[bar] != EMPTY_VALUE &&
+                  MathAbs(price - VWAPBuffer[bar]) >= MinPointsFromVWAP * _Point);
+    
+    bool signalAccepted = vwapOK;
+    
+    // Calculate signal quality
+    SIGNAL_QUALITY quality = CalculateSignalQuality(bar, price, direction, vwapOK);
+    SignalQualityBuffer[bar] = (double)quality;
+    
+    // Update statistics
+    UpdateSignalStatistics(direction, signalAccepted, quality);
     
     // Finalize previous segment if exists
     if(g_hasActiveSegment)
     {
-        FinalizeCurrentSegment(bar, high, low);
+        FinalizeSignalSegment(bar, high, low);
     }
     
-    // Count all signals (but filter for dashboard based on window settings)
-    bool countForDashboard = (!EnableTimeWindow || WindowMode == MODE_DASHBOARD_ONLY || inWindow);
-    
-    if(countForDashboard)
+    // Start new segment if signal accepted
+    if(signalAccepted)
     {
-        g_stats.totalSignals++;
-        
-        if(direction == 1)
-            g_stats.bullishSignals++;
-        else
-            g_stats.bearishSignals++;
+        StartNewSignalSegment(bar, barTime, price, direction, quality);
+        g_signalCooldown = SignalCooldownBars;
     }
     
-    // Determine signal acceptance
-    bool accepted = vwapOk;
-    
-    if(countForDashboard)
-    {
-        if(accepted)
-            g_stats.acceptedSignals++;
-        else
-            g_stats.rejectedSignals++;
-            
-        // Update last signal info
-        g_stats.lastSignalTime = TimeToString(signalTime, TIME_DATE | TIME_MINUTES);
-        g_stats.lastSignalReachedPoints = 0.0; // Will be updated as position moves
-        
-        // Update dashboard state
-        if(accepted)
-        {
-            g_stats.dashboardState = (direction == 1) ? STATE_BULLISH : STATE_BEARISH;
-        }
-    }
-    
-    // Start new segment tracking
-    if(accepted && EnableWinRate)
-    {
-        StartNewSegment(bar, signalTime, signalPrice, direction, inWindow);
-    }
-    
-    // Visual feedback
+    // Create visual feedback
     if(EnableVisualFeedback)
     {
-        CreateVisualFeedback(bar, signalPrice, direction, accepted, signalTime);
+        CreateAdvancedVisualFeedback(bar, barTime, price, direction, signalAccepted, quality);
     }
     
-    // Alerts
-    if(EnableAlerts && accepted)
+    // Trigger alerts
+    if(EnableAlerts && signalAccepted)
     {
-        TriggerAlert(direction, signalPrice, signalTime);
-    }
-    
-    if(ShowDebugInfo)
-    {
-        Print(StringFormat("Signal: %s at %.5f | VWAP: %s | Window: %s | Accepted: %s", 
-              (direction == 1) ? "BUY" : "SELL", signalPrice,
-              vwapOk ? "OK" : "REJECTED", inWindow ? "YES" : "NO", accepted ? "YES" : "NO"));
+        TriggerEnhancedAlert(direction, price, quality, barTime);
     }
 }
 
 //+------------------------------------------------------------------+
-//| Start new segment tracking |
+//| Calculate Signal Quality                                         |
 //+------------------------------------------------------------------+
-void StartNewSegment(int bar, datetime signalTime, double signalPrice, int direction, bool inWindow)
+SIGNAL_QUALITY CalculateSignalQuality(int bar, double price, int direction, bool vwapOK)
+{
+    int score = 0;
+    
+    // VWAP confirmation (+1 point)
+    if(vwapOK) score++;
+    
+    // Trend alignment (+1 point)
+    if(TrendStrengthBuffer[bar] * direction > 0) score++;
+    
+    // Volatility consideration (+1 point if moderate volatility)
+    double volatility = VolatilityBuffer[bar];
+    if(volatility > VolatilityThreshold * 0.5 && volatility < VolatilityThreshold * 2.0)
+        score++;
+    
+    // Market state consideration (+1 point)
+    MARKET_STATE state = g_dashboardData.market.state;
+    if((direction > 0 && state == MARKET_TRENDING_UP) || 
+       (direction < 0 && state == MARKET_TRENDING_DOWN))
+        score++;
+    
+    // Convert score to quality enum
+    switch(score)
+    {
+        case 4: return QUALITY_EXCELLENT;
+        case 3: return QUALITY_GOOD;
+        case 2: return QUALITY_FAIR;
+        case 1: return QUALITY_POOR;
+        default: return QUALITY_UNKNOWN;
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Update Signal Statistics                                         |
+//+------------------------------------------------------------------+
+void UpdateSignalStatistics(int direction, bool accepted, SIGNAL_QUALITY quality)
+{
+    g_dashboardData.performance.totalSignals++;
+    
+    if(direction > 0)
+        g_dashboardData.performance.bullishSignals++;
+    else
+        g_dashboardData.performance.bearishSignals++;
+    
+    if(accepted)
+    {
+        g_dashboardData.performance.acceptedSignals++;
+        
+        // Update average signal quality
+        double totalQuality = g_dashboardData.performance.avgSignalQuality * (g_dashboardData.performance.acceptedSignals - 1);
+        totalQuality += (double)quality;
+        g_dashboardData.performance.avgSignalQuality = totalQuality / g_dashboardData.performance.acceptedSignals;
+    }
+    else
+    {
+        g_dashboardData.performance.rejectedSignals++;
+    }
+    
+    g_dashboardData.performance.lastSignalTime = TimeCurrent();
+}
+
+//+------------------------------------------------------------------+
+//| Start New Signal Segment                                         |
+//+------------------------------------------------------------------+
+void StartNewSignalSegment(int bar, datetime barTime, double price, int direction, SIGNAL_QUALITY quality)
 {
     g_currentSegment.direction = direction;
-    g_currentSegment.entryPrice = signalPrice;
-    g_currentSegment.startTime = signalTime;
+    g_currentSegment.entryPrice = price;
+    g_currentSegment.startTime = barTime;
     g_currentSegment.startBar = bar;
     g_currentSegment.reachedPoints = 0.0;
+    g_currentSegment.reachedPercent = 0.0;
     g_currentSegment.isWin = false;
     g_currentSegment.finalized = false;
-    g_currentSegment.inWindow = inWindow;
-    g_hasActiveSegment = true;
+    g_currentSegment.quality = quality;
+    g_currentSegment.vwapDistance = MathAbs(price - VWAPBuffer[bar]) / _Point;
+    g_currentSegment.volatility = VolatilityBuffer[bar];
+    g_currentSegment.trendStrength = TrendStrengthBuffer[bar];
     
-    if(ShowDebugInfo)
-    {
-        Print(StringFormat("Started new segment: %s at %.5f", 
-              (direction == 1) ? "BUY" : "SELL", signalPrice));
-    }
+    g_hasActiveSegment = true;
 }
 
 //+------------------------------------------------------------------+
-//| Update current segment reach |
+//| Finalize Signal Segment                                          |
 //+------------------------------------------------------------------+
-void UpdateCurrentSegmentReach(int bar, const double& high[], const double& low[])
+void FinalizeSignalSegment(int bar, const double& high[], const double& low[])
 {
-    if(!g_hasActiveSegment || !EnableWinRate)
-        return;
-        
-    double favorablePrice;
-    if(g_currentSegment.direction == 1) // Bullish
-        favorablePrice = high[bar];
-    else // Bearish
-        favorablePrice = low[bar];
-        
-    double reachedPoints;
-    if(g_currentSegment.direction == 1)
-        reachedPoints = (favorablePrice - g_currentSegment.entryPrice) / _Point;
-    else
-        reachedPoints = (g_currentSegment.entryPrice - favorablePrice) / _Point;
-        
-    if(reachedPoints > g_currentSegment.reachedPoints)
-    {
-        g_currentSegment.reachedPoints = reachedPoints;
-        
-        // Update dashboard
-        bool countForDashboard = (!EnableTimeWindow || WindowMode == MODE_DASHBOARD_ONLY || g_currentSegment.inWindow);
-        if(countForDashboard)
-        {
-            g_stats.lastSignalReachedPoints = reachedPoints;
-        }
-        
-        // Check for win
-        if(!g_currentSegment.isWin && reachedPoints >= WinThresholdPoints)
-        {
-            g_currentSegment.isWin = true;
-            
-            if(ShowDebugInfo)
-            {
-                Print(StringFormat("Segment reached win threshold: %.1f points", reachedPoints));
-            }
-        }
-    }
-}
-
-//+------------------------------------------------------------------+
-//| Finalize current segment |
-//+------------------------------------------------------------------+
-void FinalizeCurrentSegment(int bar, const double& high[], const double& low[])
-{
-    if(!g_hasActiveSegment)
-        return;
-        
-    // Final update of reached points
-    UpdateCurrentSegmentReach(bar, high, low);
+    if(!g_hasActiveSegment) return;
+    
+    // Calculate final metrics
+    UpdateSegmentReach(bar, high, low);
     
     // Mark as finalized
     g_currentSegment.finalized = true;
     
-    // Add to segments array
-    ArrayResize(g_signalSegments, g_segmentCount + 1);
-    g_signalSegments[g_segmentCount] = g_currentSegment;
-    g_segmentCount++;
-    
-    // Update win/loss stats
-    bool countForDashboard = (!EnableTimeWindow || WindowMode == MODE_DASHBOARD_ONLY || g_currentSegment.inWindow);
-    if(countForDashboard && EnableWinRate)
+    // Add to history
+    if(g_signalCount < MaxSignalHistory)
     {
-        if(g_currentSegment.isWin)
-            g_stats.wins++;
-        else
-            g_stats.losses++;
+        g_signalHistory[g_signalCount] = g_currentSegment;
+        g_signalCount++;
     }
+    else
+    {
+        // Shift array and add new signal
+        for(int i = 0; i < MaxSignalHistory - 1; i++)
+        {
+            g_signalHistory[i] = g_signalHistory[i + 1];
+        }
+        g_signalHistory[MaxSignalHistory - 1] = g_currentSegment;
+    }
+    
+    // Update performance metrics
+    UpdatePerformanceFromSegment();
     
     g_hasActiveSegment = false;
+}
+
+//+------------------------------------------------------------------+
+//| Update Segment Reach                                             |
+//+------------------------------------------------------------------+
+void UpdateSegmentReach(int bar, const double& high[], const double& low[])
+{
+    if(!g_hasActiveSegment) return;
     
-    if(ShowDebugInfo)
+    double bestPrice = g_currentSegment.entryPrice;
+    
+    // Find the best price reached
+    for(int i = g_currentSegment.startBar; i <= bar; i++)
     {
-        Print(StringFormat("Finalized segment: %.1f points, Win: %s", 
-              g_currentSegment.reachedPoints, g_currentSegment.isWin ? "YES" : "NO"));
+        if(g_currentSegment.direction > 0) // Bullish
+        {
+            if(high[i] > bestPrice)
+                bestPrice = high[i];
+        }
+        else // Bearish
+        {
+            if(low[i] < bestPrice)
+                bestPrice = low[i];
+        }
+    }
+    
+    // Calculate points and percentage
+    if(g_currentSegment.direction > 0)
+    {
+        g_currentSegment.reachedPoints = (bestPrice - g_currentSegment.entryPrice) / _Point;
+    }
+    else
+    {
+        g_currentSegment.reachedPoints = (g_currentSegment.entryPrice - bestPrice) / _Point;
+    }
+    
+    g_currentSegment.reachedPercent = (g_currentSegment.reachedPoints * _Point / g_currentSegment.entryPrice) * 100.0;
+    
+    // Check win condition
+    if(EnableWinRate && g_currentSegment.reachedPoints >= WinThresholdPoints)
+    {
+        g_currentSegment.isWin = true;
     }
 }
 
 //+------------------------------------------------------------------+
-//| Update averages and win rate |
+//| Update Performance From Segment                                  |
 //+------------------------------------------------------------------+
-void UpdateAverages()
+void UpdatePerformanceFromSegment()
 {
-    if(g_segmentCount == 0)
+    if(g_currentSegment.isWin)
     {
-        g_stats.avgBluePoints = 0.0;
-        g_stats.avgWhitePoints = 0.0;
-        g_stats.avgAllPoints = 0.0;
-        g_stats.winRate = 0.0;
-        return;
-    }
-    
-    double totalBluePoints = 0.0, totalWhitePoints = 0.0, totalAllPoints = 0.0;
-    int blueCount = 0, whiteCount = 0, totalCount = 0;
-    int totalWins = g_stats.wins, totalLosses = g_stats.losses;
-    
-    for(int i = 0; i < g_segmentCount; i++)
-    {
-        bool countForDashboard = (!EnableTimeWindow || WindowMode == MODE_DASHBOARD_ONLY || g_signalSegments[i].inWindow);
+        g_dashboardData.performance.wins++;
         
-        if(countForDashboard)
-        {
-            totalAllPoints += g_signalSegments[i].reachedPoints;
-            totalCount++;
-            
-            if(g_signalSegments[i].direction == 1) // Bullish (Blue)
-            {
-                totalBluePoints += g_signalSegments[i].reachedPoints;
-                blueCount++;
-            }
-            else // Bearish (White)
-            {
-                totalWhitePoints += g_signalSegments[i].reachedPoints;
-                whiteCount++;
-            }
-        }
-    }
-    
-    // Include current active segment if exists
-    if(g_hasActiveSegment)
-    {
-        bool countForDashboard = (!EnableTimeWindow || WindowMode == MODE_DASHBOARD_ONLY || g_currentSegment.inWindow);
+        // Update average win points
+        double totalWinPoints = g_dashboardData.performance.avgWinPoints * (g_dashboardData.performance.wins - 1);
+        totalWinPoints += g_currentSegment.reachedPoints;
+        g_dashboardData.performance.avgWinPoints = totalWinPoints / g_dashboardData.performance.wins;
         
-        if(countForDashboard)
-        {
-            totalAllPoints += g_currentSegment.reachedPoints;
-            totalCount++;
-            
-            if(g_currentSegment.direction == 1)
-            {
-                totalBluePoints += g_currentSegment.reachedPoints;
-                blueCount++;
-            }
-            else
-            {
-                totalWhitePoints += g_currentSegment.reachedPoints;
-                whiteCount++;
-            }
-        }
+        // Update best signal
+        if(g_currentSegment.reachedPoints > g_dashboardData.performance.bestSignalPoints)
+            g_dashboardData.performance.bestSignalPoints = g_currentSegment.reachedPoints;
     }
-    
-    // Calculate averages
-    g_stats.avgBluePoints = (blueCount > 0) ? (totalBluePoints / blueCount) : 0.0;
-    g_stats.avgWhitePoints = (whiteCount > 0) ? (totalWhitePoints / whiteCount) : 0.0;
-    g_stats.avgAllPoints = (totalCount > 0) ? (totalAllPoints / totalCount) : 0.0;
+    else
+    {
+        g_dashboardData.performance.losses++;
+        
+        // Update average loss points (use negative values for losses)
+        double lossPoints = -MathAbs(g_currentSegment.reachedPoints);
+        double totalLossPoints = g_dashboardData.performance.avgLossPoints * (g_dashboardData.performance.losses - 1);
+        totalLossPoints += lossPoints;
+        g_dashboardData.performance.avgLossPoints = totalLossPoints / g_dashboardData.performance.losses;
+        
+        // Update worst signal
+        if(lossPoints < g_dashboardData.performance.worstSignalPoints)
+            g_dashboardData.performance.worstSignalPoints = lossPoints;
+    }
     
     // Calculate win rate
-    if(EnableWinRate)
+    int totalDecisions = g_dashboardData.performance.wins + g_dashboardData.performance.losses;
+    if(totalDecisions > 0)
     {
-        int totalDecided = totalWins + totalLosses;
-        g_stats.winRate = (totalDecided > 0) ? ((double)totalWins / totalDecided * 100.0) : 0.0;
+        g_dashboardData.performance.winRate = ((double)g_dashboardData.performance.wins / totalDecisions) * 100.0;
     }
+    
+    // Calculate profit factor
+    double grossProfit = g_dashboardData.performance.avgWinPoints * g_dashboardData.performance.wins;
+    double grossLoss = MathAbs(g_dashboardData.performance.avgLossPoints * g_dashboardData.performance.losses);
+    
+    if(grossLoss > 0)
+        g_dashboardData.performance.profitFactor = grossProfit / grossLoss;
 }
 
 //+------------------------------------------------------------------+
-//| Create visual feedback |
+//| Update Real-Time Data                                            |
 //+------------------------------------------------------------------+
-void CreateVisualFeedback(int bar, double price, int direction, bool accepted, datetime signalTime)
+void UpdateRealTimeData(int bar, const datetime& time[], const double& close[], 
+                       const double& high[], const double& low[])
 {
-    string objectName = StringFormat("ST_VWAP_Signal_%lld", signalTime);
+    g_dashboardData.currentSuperTrend = SuperTrendBuffer[bar];
+    g_dashboardData.currentVWAP = VWAPBuffer[bar];
+    g_dashboardData.barsProcessed = bar + 1;
     
-    color signalColor;
-    if(!accepted)
-        signalColor = RejectionColor;
-    else if(direction == 1)
-        signalColor = BullishAcceptColor;
+    // Update current state based on SuperTrend direction
+    int direction = (int)SuperTrendDirectionBuffer[bar];
+    if(direction > 0)
+        g_dashboardData.currentState = STATE_BULLISH;
+    else if(direction < 0)
+        g_dashboardData.currentState = STATE_BEARISH;
     else
-        signalColor = BearishAcceptColor;
+        g_dashboardData.currentState = STATE_NEUTRAL;
     
-    if(ObjectCreate(0, objectName, OBJ_TREND, 0, signalTime, price, signalTime, price))
+    // Update market data
+    g_dashboardData.market.currentPrice = close[bar];
+    if(bar > 0)
     {
-        ObjectSetInteger(0, objectName, OBJPROP_COLOR, signalColor);
-        ObjectSetInteger(0, objectName, OBJPROP_WIDTH, CircleWidth);
-        ObjectSetInteger(0, objectName, OBJPROP_STYLE, STYLE_SOLID);
-        ObjectSetInteger(0, objectName, OBJPROP_BACK, false);
-        ObjectSetInteger(0, objectName, OBJPROP_SELECTABLE, false);
-        ObjectSetInteger(0, objectName, OBJPROP_HIDDEN, true);
-        
-        // Store object creation time for cleanup
-        ObjectSetString(0, objectName, OBJPROP_TEXT, "ST_VWAP_Signal");
+        g_dashboardData.market.priceChange = close[bar] - close[bar-1];
+        g_dashboardData.market.priceChangePercent = (g_dashboardData.market.priceChange / close[bar-1]) * 100.0;
     }
-}
-
-//+------------------------------------------------------------------+
-//| Trigger alert |
-//+------------------------------------------------------------------+
-void TriggerAlert(int direction, double price, datetime signalTime)
-{
-    if(signalTime <= g_lastAlertTime)
-        return;
-        
-    string alertText = StringFormat("ST&VWAP %s Signal at %.5f", 
-                                   (direction == 1) ? "BUY" : "SELL", price);
     
-    if(AlertPopup)
-        Alert(alertText);
-        
-    if(AlertSoundFile != "")
-        PlaySound(AlertSoundFile);
-        
-    g_lastAlertTime = signalTime;
-}
-
-//+------------------------------------------------------------------+
-//| Clean old objects |
-//+------------------------------------------------------------------+
-void CleanOldObjects(const datetime& time[], int rates_total)
-{
-    if(rates_total < SignalLifetimeBars)
-        return;
-        
-    datetime cutoffTime = time[rates_total - SignalLifetimeBars];
+    g_dashboardData.market.lastUpdate = time[bar];
     
-    for(int i = ObjectsTotal(0, 0) - 1; i >= 0; i--)
+    // Update active segment reach
+    if(g_hasActiveSegment)
     {
-        string objectName = ObjectName(0, i);
+        UpdateSegmentReach(bar, high, low);
+    }
+    
+    // Update system load (simple approximation)
+    g_dashboardData.systemLoad = ((double)bar / 1000.0) * 100.0;
+    if(g_dashboardData.systemLoad > 100.0)
+        g_dashboardData.systemLoad = 100.0;
+}
+
+//+------------------------------------------------------------------+
+//| Should Update Dashboard                                          |
+//+------------------------------------------------------------------+
+bool ShouldUpdateDashboard()
+{
+    datetime currentTime = TimeCurrent();
+    if(EnableRealTimeUpdates && currentTime > g_lastUpdate + 1) // Update every second
+    {
+        g_lastUpdate = currentTime;
+        return true;
+    }
+    
+    return !EnableRealTimeUpdates; // Always update if real-time is disabled
+}
+
+//+------------------------------------------------------------------+
+//| Update Advanced Dashboard                                        |
+//+------------------------------------------------------------------+
+void UpdateAdvancedDashboard(int rates_total, const datetime& time[], const double& close[])
+{
+    if(!ShowDashboard) return;
+    
+    // Create dashboard if needed
+    if(!g_dashboardCreated)
+    {
+        CreateAdvancedDashboard();
+    }
+    
+    // Update dashboard status
+    g_dashboardData.status = "Running";
+    
+    // Prepare dashboard values with enhanced formatting
+    string values[] = {
+        // Current Market State
+        DoubleToString(g_dashboardData.market.currentPrice, _Digits),
+        DoubleToString(g_dashboardData.currentSuperTrend, _Digits),
+        DoubleToString(g_dashboardData.currentVWAP, _Digits),
+        GetStateText(g_dashboardData.currentState),
+        GetMarketStateText(g_dashboardData.market.state),
         
-        if(StringFind(objectName, "ST_VWAP_Signal_") == 0)
+        // Market Analysis
+        StringFormat("%.2f%%", g_dashboardData.market.priceChangePercent),
+        StringFormat("%.2f%%", g_dashboardData.market.volatility),
+        StringFormat("%.1f", g_dashboardData.market.trendStrength),
+        StringFormat("%.0f", g_dashboardData.market.averageVolume),
+        
+        // Signal Statistics
+        IntegerToString(g_dashboardData.performance.totalSignals),
+        IntegerToString(g_dashboardData.performance.bullishSignals),
+        IntegerToString(g_dashboardData.performance.bearishSignals),
+        IntegerToString(g_dashboardData.performance.acceptedSignals),
+        IntegerToString(g_dashboardData.performance.rejectedSignals),
+        
+        // Performance Metrics
+        StringFormat("%.1f%%", g_dashboardData.performance.winRate),
+        StringFormat("%.1f", g_dashboardData.performance.avgWinPoints),
+        StringFormat("%.1f", MathAbs(g_dashboardData.performance.avgLossPoints)),
+        StringFormat("%.2f", g_dashboardData.performance.profitFactor),
+        StringFormat("%.1f", g_dashboardData.performance.avgSignalQuality),
+        
+        // Advanced Metrics
+        StringFormat("%.1f", g_dashboardData.performance.bestSignalPoints),
+        StringFormat("%.1f", MathAbs(g_dashboardData.performance.worstSignalPoints)),
+        IntegerToString(g_dashboardData.performance.wins),
+        IntegerToString(g_dashboardData.performance.losses),
+        
+        // System Information
+        IntegerToString(g_dashboardData.barsProcessed),
+        TimeToString(g_dashboardData.sessionStart, TIME_DATE | TIME_MINUTES),
+        g_dashboardData.status,
+        StringFormat("%.1f%%", g_dashboardData.systemLoad)
+    };
+    
+    // Color array for enhanced visual feedback
+    color colors[] = {
+        // Current Market State
+        AccentColor,  // Price
+        GetDirectionColor(g_dashboardData.currentState),  // SuperTrend
+        WarningColor,  // VWAP
+        GetDirectionColor(g_dashboardData.currentState),  // Direction
+        GetMarketStateColor(g_dashboardData.market.state),  // Market State
+        
+        // Market Analysis
+        GetChangeColor(g_dashboardData.market.priceChangePercent),  // Price Change
+        GetVolatilityColor(g_dashboardData.market.volatility),  // Volatility
+        GetTrendColor(g_dashboardData.market.trendStrength),  // Trend Strength
+        DashboardTextColor,  // Volume
+        
+        // Signal Statistics
+        AccentColor,  // Total Signals
+        SuccessColor,  // Bullish
+        ErrorColor,  // Bearish
+        SuccessColor,  // Accepted
+        ErrorColor,  // Rejected
+        
+        // Performance Metrics
+        GetWinRateColor(g_dashboardData.performance.winRate),  // Win Rate
+        SuccessColor,  // Avg Win
+        ErrorColor,  // Avg Loss
+        GetProfitFactorColor(g_dashboardData.performance.profitFactor),  // Profit Factor
+        GetQualityColor(g_dashboardData.performance.avgSignalQuality),  // Signal Quality
+        
+        // Advanced Metrics
+        SuccessColor,  // Best Signal
+        ErrorColor,  // Worst Signal
+        SuccessColor,  // Total Wins
+        ErrorColor,  // Total Losses
+        
+        // System Information
+        AccentColor,  // Bars Processed
+        DashboardTextColor,  // Session Start
+        GetSystemStatusColor(g_dashboardData.status),  // Status
+        GetLoadColor(g_dashboardData.systemLoad)  // System Load
+    };
+    
+    // Update dashboard labels with values and colors
+    for(int i = 0; i < ArraySize(values); i++)
+    {
+        string valueName = "ESTVWAP_Value_" + IntegerToString(i);
+        if(ObjectFind(0, valueName) >= 0)
         {
-            datetime objectTime = (datetime)StringToInteger(StringSubstr(objectName, 15));
-            
-            if(objectTime < cutoffTime)
-                ObjectDelete(0, objectName);
+            ObjectSetString(0, valueName, OBJPROP_TEXT, values[i]);
+            ObjectSetInteger(0, valueName, OBJPROP_COLOR, colors[i]);
         }
     }
+    
+    ChartRedraw();
 }
 
 //+------------------------------------------------------------------+
-//| Create dashboard |
+//| Create Advanced Dashboard                                        |
 //+------------------------------------------------------------------+
-void CreateDashboard()
+void CreateAdvancedDashboard()
 {
-    if(g_dashboardCreated)
-        return;
-        
-    // Create dashboard background
-    string bgName = "ST_VWAP_Dashboard_BG";
+    if(g_dashboardCreated) return;
+    
+    // Create main dashboard background
+    string bgName = "ESTVWAP_Dashboard_BG";
     if(ObjectFind(0, bgName) < 0)
     {
         ObjectCreate(0, bgName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
         ObjectSetInteger(0, bgName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
         ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, DashboardX);
         ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, DashboardY);
-        ObjectSetInteger(0, bgName, OBJPROP_XSIZE, 350);
-        ObjectSetInteger(0, bgName, OBJPROP_YSIZE, 300);
+        ObjectSetInteger(0, bgName, OBJPROP_XSIZE, DashboardWidth);
+        ObjectSetInteger(0, bgName, OBJPROP_YSIZE, DashboardHeight);
         ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR, DashboardBgColor);
         ObjectSetInteger(0, bgName, OBJPROP_BORDER_COLOR, DashboardBorderColor);
         ObjectSetInteger(0, bgName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
-        ObjectSetInteger(0, bgName, OBJPROP_WIDTH, 1);
+        ObjectSetInteger(0, bgName, OBJPROP_WIDTH, 2);
         ObjectSetInteger(0, bgName, OBJPROP_BACK, true);
         ObjectSetInteger(0, bgName, OBJPROP_SELECTABLE, false);
         ObjectSetInteger(0, bgName, OBJPROP_HIDDEN, true);
     }
     
-    // Create dashboard title
-    string titleName = "ST_VWAP_Dashboard_Title";
-    if(ObjectFind(0, titleName) < 0)
-    {
-        ObjectCreate(0, titleName, OBJ_LABEL, 0, 0, 0);
-        ObjectSetString(0, titleName, OBJPROP_TEXT, "Enhanced ST&VWAP Dashboard");
-        ObjectSetString(0, titleName, OBJPROP_FONT, DashboardFont);
-        ObjectSetInteger(0, titleName, OBJPROP_FONTSIZE, LabelFontSize + 2);
-        ObjectSetInteger(0, titleName, OBJPROP_COLOR, clrYellow);
-        ObjectSetInteger(0, titleName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-        ObjectSetInteger(0, titleName, OBJPROP_XDISTANCE, DashboardX + 10);
-        ObjectSetInteger(0, titleName, OBJPROP_YDISTANCE, DashboardY + 10);
-        ObjectSetInteger(0, titleName, OBJPROP_BACK, false);
-        ObjectSetInteger(0, titleName, OBJPROP_SELECTABLE, false);
-        ObjectSetInteger(0, titleName, OBJPROP_HIDDEN, true);
-    }
+    // Create title
+    CreateDashboardTitle();
     
-    // Create labels and values
-    CreateDashboardLabels();
+    // Create sections
+    CreateDashboardSections();
     
     g_dashboardCreated = true;
 }
 
 //+------------------------------------------------------------------+
-//| Create dashboard labels |
+//| Create Dashboard Title                                           |
 //+------------------------------------------------------------------+
-void CreateDashboardLabels()
+void CreateDashboardTitle()
+{
+    string titleName = "ESTVWAP_Title";
+    if(ObjectFind(0, titleName) < 0)
+    {
+        ObjectCreate(0, titleName, OBJ_LABEL, 0, 0, 0);
+        ObjectSetString(0, titleName, OBJPROP_TEXT, "Enhanced SuperTrend & VWAP Analytics");
+        ObjectSetString(0, titleName, OBJPROP_FONT, DashboardFont);
+        ObjectSetInteger(0, titleName, OBJPROP_FONTSIZE, LabelFontSize + 2);
+        ObjectSetInteger(0, titleName, OBJPROP_COLOR, AccentColor);
+        ObjectSetInteger(0, titleName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+        ObjectSetInteger(0, titleName, OBJPROP_XDISTANCE, DashboardX + LabelXOffset);
+        ObjectSetInteger(0, titleName, OBJPROP_YDISTANCE, DashboardY + 10);
+        ObjectSetInteger(0, titleName, OBJPROP_BACK, false);
+        ObjectSetInteger(0, titleName, OBJPROP_SELECTABLE, false);
+        ObjectSetInteger(0, titleName, OBJPROP_HIDDEN, true);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Create Dashboard Sections                                        |
+//+------------------------------------------------------------------+
+void CreateDashboardSections()
 {
     string labels[] = {
         // Current Market State
-        "Current Price:", "SuperTrend:", "VWAP:", "Direction:",
-        "", // Section separator
-        // Signal Statistics  
-        "Total Signals:", "Bullish:", "Bearish:", "Accepted:", "Rejected:",
-        "", // Section separator
-        // Performance
-        "Win Rate:", "Last Signal:", "Last Signal Reached Points:", 
-        "Average Blue Signals points are:", "Average white Signals points are:", 
-        "Average of all Blue-white signals are:",
-        "", // Section separator
-        // Technical Info
-        "Bars Processed:", "Session:", "Status:"
+        "Current Price:", "SuperTrend:", "VWAP:", "ST Direction:", "Market State:",
+        "", // Separator
+        // Market Analysis
+        "Price Change:", "Volatility:", "Trend Strength:", "Avg Volume:",
+        "", // Separator
+        // Signal Statistics
+        "Total Signals:", "Bullish Signals:", "Bearish Signals:", 
+        "Accepted Signals:", "Rejected Signals:",
+        "", // Separator
+        // Performance Metrics
+        "Win Rate:", "Avg Win Points:", "Avg Loss Points:", 
+        "Profit Factor:", "Signal Quality:",
+        "", // Separator
+        // Advanced Metrics
+        "Best Signal:", "Worst Signal:", "Total Wins:", "Total Losses:",
+        "", // Separator
+        // System Information
+        "Bars Processed:", "Session Start:", "Status:", "System Load:"
     };
     
-    int yOffset = 35;
+    int yOffset = 40;
     int labelIndex = 0;
-    int lineHeight = MathMax(LabelFontSize, ValueFontSize) + 4; // Adaptive line height
+    int lineHeight = MathMax(LabelFontSize, ValueFontSize) + 5;
     
     for(int i = 0; i < ArraySize(labels); i++)
     {
         if(labels[i] == "") // Section separator
         {
-            yOffset += 8; // Extra spacing between sections
+            yOffset += 8;
             continue;
         }
         
-        // Create label with independent positioning and font size
-        string labelName = "ST_VWAP_Dashboard_Label_" + IntegerToString(labelIndex);
+        // Create section header for major sections
+        if(i == 0) CreateSectionHeader("Market State", yOffset - 15);
+        else if(i == 6) CreateSectionHeader("Market Analysis", yOffset - 15);
+        else if(i == 11) CreateSectionHeader("Signal Statistics", yOffset - 15);
+        else if(i == 17) CreateSectionHeader("Performance", yOffset - 15);
+        else if(i == 23) CreateSectionHeader("Advanced Metrics", yOffset - 15);
+        else if(i == 28) CreateSectionHeader("System Info", yOffset - 15);
+        
+        // Create label
+        string labelName = "ESTVWAP_Label_" + IntegerToString(labelIndex);
         if(ObjectFind(0, labelName) < 0)
         {
             ObjectCreate(0, labelName, OBJ_LABEL, 0, 0, 0);
@@ -980,21 +1311,22 @@ void CreateDashboardLabels()
             ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, LabelFontSize);
             ObjectSetInteger(0, labelName, OBJPROP_COLOR, DashboardTextColor);
             ObjectSetInteger(0, labelName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-            ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, DashboardX + LabelXOffset);
+            ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, DashboardX + LabelXOffset + 10);
             ObjectSetInteger(0, labelName, OBJPROP_YDISTANCE, DashboardY + yOffset);
             ObjectSetInteger(0, labelName, OBJPROP_BACK, false);
             ObjectSetInteger(0, labelName, OBJPROP_SELECTABLE, false);
             ObjectSetInteger(0, labelName, OBJPROP_HIDDEN, true);
         }
         
-        // Create value with independent positioning and font size
-        string valueName = "ST_VWAP_Dashboard_Value_" + IntegerToString(labelIndex);
+        // Create value
+        string valueName = "ESTVWAP_Value_" + IntegerToString(labelIndex);
         if(ObjectFind(0, valueName) < 0)
         {
             ObjectCreate(0, valueName, OBJ_LABEL, 0, 0, 0);
+            ObjectSetString(0, valueName, OBJPROP_TEXT, "...");
             ObjectSetString(0, valueName, OBJPROP_FONT, DashboardFont);
             ObjectSetInteger(0, valueName, OBJPROP_FONTSIZE, ValueFontSize);
-            ObjectSetInteger(0, valueName, OBJPROP_COLOR, clrWhite);
+            ObjectSetInteger(0, valueName, OBJPROP_COLOR, DashboardTextColor);
             ObjectSetInteger(0, valueName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
             ObjectSetInteger(0, valueName, OBJPROP_XDISTANCE, DashboardX + ValueXOffset);
             ObjectSetInteger(0, valueName, OBJPROP_YDISTANCE, DashboardY + yOffset);
@@ -1009,159 +1341,275 @@ void CreateDashboardLabels()
 }
 
 //+------------------------------------------------------------------+
-//| Update dashboard with current data |
+//| Create Section Header                                            |
 //+------------------------------------------------------------------+
-void UpdateDashboard()
+void CreateSectionHeader(string text, int yPos)
 {
-    if(!g_dashboardCreated) return;
-    
-    string directionText = "NO SIGNAL";
-    color directionColor = clrGray;
-    
-    if(g_stats.dashboardState == STATE_BULLISH)
+    string headerName = "ESTVWAP_Header_" + text;
+    if(ObjectFind(0, headerName) < 0)
     {
-        directionText = "BULLISH";
-        directionColor = clrLimeGreen;
+        ObjectCreate(0, headerName, OBJ_LABEL, 0, 0, 0);
+        ObjectSetString(0, headerName, OBJPROP_TEXT, "▼ " + text);
+        ObjectSetString(0, headerName, OBJPROP_FONT, DashboardFont);
+        ObjectSetInteger(0, headerName, OBJPROP_FONTSIZE, LabelFontSize + 1);
+        ObjectSetInteger(0, headerName, OBJPROP_COLOR, AccentColor);
+        ObjectSetInteger(0, headerName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+        ObjectSetInteger(0, headerName, OBJPROP_XDISTANCE, DashboardX + LabelXOffset);
+        ObjectSetInteger(0, headerName, OBJPROP_YDISTANCE, DashboardY + yPos);
+        ObjectSetInteger(0, headerName, OBJPROP_BACK, false);
+        ObjectSetInteger(0, headerName, OBJPROP_SELECTABLE, false);
+        ObjectSetInteger(0, headerName, OBJPROP_HIDDEN, true);
     }
-    else if(g_stats.dashboardState == STATE_BEARISH)
+}
+
+//+------------------------------------------------------------------+
+//| Helper Functions for Dashboard Colors                            |
+//+------------------------------------------------------------------+
+string GetStateText(DASHBOARD_STATE state)
+{
+    switch(state)
     {
-        directionText = "BEARISH";
-        directionColor = clrTomato;
+        case STATE_BULLISH: return "BULLISH";
+        case STATE_BEARISH: return "BEARISH";
+        case STATE_NEUTRAL: return "NEUTRAL";
+        default: return "NO SIGNAL";
     }
-    
-    // Format win rate based on whether it's enabled
-    string winRateText = EnableWinRate ? DoubleToString(g_stats.winRate, 1) + "%" : "N/A";
-    color winRateColor = EnableWinRate ? ((g_stats.winRate >= 50) ? clrLimeGreen : clrTomato) : clrGray;
-    
-    // Format time window info
-    string sessionText = TimeToString(g_stats.sessionStart, TIME_DATE|TIME_MINUTES);
-    if(EnableTimeWindow)
+}
+
+string GetMarketStateText(MARKET_STATE state)
+{
+    switch(state)
     {
-        sessionText += " • " + IntegerToString(StartHour) + ":" + 
-                      StringFormat("%02d", StartMinute) + " → " + 
-                      IntegerToString(EndHour) + ":" + 
-                      StringFormat("%02d", EndMinute);
+        case MARKET_TRENDING_UP: return "TRENDING UP";
+        case MARKET_TRENDING_DOWN: return "TRENDING DOWN";
+        case MARKET_RANGING: return "RANGING";
+        case MARKET_VOLATILE: return "VOLATILE";
+        case MARKET_QUIET: return "QUIET";
+        default: return "UNKNOWN";
     }
-    
-    // Update values array
-    string values[] = {
-        // Current Market State
-        DoubleToString(g_stats.currentPrice, _Digits),
-        DoubleToString(g_stats.currentSuperTrend, _Digits),
-        DoubleToString(g_stats.currentVWAP, _Digits),
-        directionText,
-        "", // Section separator
-        // Signal Statistics
-        IntegerToString(g_stats.totalSignals),
-        IntegerToString(g_stats.bullishSignals),
-        IntegerToString(g_stats.bearishSignals),
-        IntegerToString(g_stats.acceptedSignals),
-        IntegerToString(g_stats.rejectedSignals),
-        "", // Section separator
-        // Performance
-        winRateText,
-        g_stats.lastSignalTime,
-        DoubleToString(g_stats.lastSignalReachedPoints, 1),
-        DoubleToString(g_stats.avgBluePoints, 1),
-        DoubleToString(g_stats.avgWhitePoints, 1),
-        DoubleToString(g_stats.avgAllPoints, 1),
-        "", // Section separator
-        // Technical Info
-        IntegerToString(g_stats.barsProcessed),
-        sessionText,
-        g_stats.windowStatus
-    };
-    
-    color colors[] = {
-        // Current Market State
-        clrWhite, clrWhite, clrWhite, directionColor,
-        clrWhite, // Section separator placeholder
-        // Signal Statistics
-        clrWhite, clrCyan, clrOrange, clrLimeGreen, clrTomato,
-        clrWhite, // Section separator placeholder
-        // Performance
-        winRateColor, clrWhite, clrYellow, clrCyan, clrWhite, clrLightBlue,
-        clrWhite, // Section separator placeholder
-        // Technical Info
-        clrWhite, clrWhite, g_stats.inTimeWindow ? clrLimeGreen : clrGray
-    };
-    
-    int valueIndex = 0;
-    for(int i = 0; i < ArraySize(values); i++)
+}
+
+color GetDirectionColor(DASHBOARD_STATE state)
+{
+    switch(state)
     {
-        if(values[i] == "") // Skip section separators
-            continue;
-            
-        string valueName = "ST_VWAP_Dashboard_Value_" + IntegerToString(valueIndex);
-        if(ObjectFind(0, valueName) >= 0)
+        case STATE_BULLISH: return SuccessColor;
+        case STATE_BEARISH: return ErrorColor;
+        default: return WarningColor;
+    }
+}
+
+color GetMarketStateColor(MARKET_STATE state)
+{
+    switch(state)
+    {
+        case MARKET_TRENDING_UP: return SuccessColor;
+        case MARKET_TRENDING_DOWN: return ErrorColor;
+        case MARKET_VOLATILE: return WarningColor;
+        case MARKET_QUIET: return AccentColor;
+        default: return DashboardTextColor;
+    }
+}
+
+color GetChangeColor(double change)
+{
+    if(change > 0.1) return SuccessColor;
+    if(change < -0.1) return ErrorColor;
+    return WarningColor;
+}
+
+color GetVolatilityColor(double volatility)
+{
+    if(volatility > VolatilityThreshold * 2) return ErrorColor;
+    if(volatility > VolatilityThreshold) return WarningColor;
+    return SuccessColor;
+}
+
+color GetTrendColor(double strength)
+{
+    if(MathAbs(strength) > 70) return SuccessColor;
+    if(MathAbs(strength) > 30) return WarningColor;
+    return ErrorColor;
+}
+
+color GetWinRateColor(double winRate)
+{
+    if(winRate >= 70) return SuccessColor;
+    if(winRate >= 50) return WarningColor;
+    return ErrorColor;
+}
+
+color GetProfitFactorColor(double pf)
+{
+    if(pf >= 2.0) return SuccessColor;
+    if(pf >= 1.0) return WarningColor;
+    return ErrorColor;
+}
+
+color GetQualityColor(double quality)
+{
+    if(quality >= 3.5) return SuccessColor;
+    if(quality >= 2.5) return WarningColor;
+    return ErrorColor;
+}
+
+color GetSystemStatusColor(string status)
+{
+    if(status == "Running") return SuccessColor;
+    if(status == "Initializing...") return WarningColor;
+    return ErrorColor;
+}
+
+color GetLoadColor(double load)
+{
+    if(load < 50) return SuccessColor;
+    if(load < 80) return WarningColor;
+    return ErrorColor;
+}
+
+//+------------------------------------------------------------------+
+//| Create Advanced Visual Feedback                                  |
+//+------------------------------------------------------------------+
+void CreateAdvancedVisualFeedback(int bar, datetime barTime, double price, int direction, 
+                                  bool accepted, SIGNAL_QUALITY quality)
+{
+    string objectName = StringFormat("ESTVWAP_Signal_%lld", barTime);
+    
+    // Determine colors based on quality and acceptance
+    color signalColor;
+    if(!accepted)
+        signalColor = RejectedSignalColor;
+    else
+    {
+        switch(quality)
         {
-            ObjectSetString(0, valueName, OBJPROP_TEXT, values[i]);
-            ObjectSetInteger(0, valueName, OBJPROP_COLOR, colors[i]);
+            case QUALITY_EXCELLENT: signalColor = (direction > 0) ? clrLime : clrRed; break;
+            case QUALITY_GOOD: signalColor = (direction > 0) ? BullishSignalColor : BearishSignalColor; break;
+            case QUALITY_FAIR: signalColor = (direction > 0) ? clrCyan : clrOrange; break;
+            default: signalColor = RejectedSignalColor; break;
         }
+    }
+    
+    // Create signal marker
+    if(ObjectCreate(0, objectName, OBJ_ARROW, 0, barTime, price))
+    {
+        int arrowCode = (direction > 0) ? 233 : 234; // Up or down arrow
+        ObjectSetInteger(0, objectName, OBJPROP_ARROWCODE, arrowCode);
+        ObjectSetInteger(0, objectName, OBJPROP_COLOR, signalColor);
+        ObjectSetInteger(0, objectName, OBJPROP_WIDTH, CircleWidth + (int)quality);
+        ObjectSetInteger(0, objectName, OBJPROP_BACK, false);
+        ObjectSetInteger(0, objectName, OBJPROP_SELECTABLE, false);
+        ObjectSetInteger(0, objectName, OBJPROP_HIDDEN, true);
         
-        valueIndex++;
+        // Set tooltip with detailed information
+        string tooltip = StringFormat("%s Signal - Quality: %s\nVWAP Distance: %.1f pts\nVolatility: %.2f%%",
+                                     (direction > 0) ? "BULLISH" : "BEARISH",
+                                     EnumToString(quality),
+                                     g_currentSegment.vwapDistance,
+                                     g_currentSegment.volatility);
+        ObjectSetString(0, objectName, OBJPROP_TOOLTIP, tooltip);
     }
 }
 
 //+------------------------------------------------------------------+
-//| Update idle dashboard (outside time window) |
+//| Trigger Enhanced Alert                                           |
 //+------------------------------------------------------------------+
-void UpdateIdleDashboard()
+void TriggerEnhancedAlert(int direction, double price, SIGNAL_QUALITY quality, datetime alertTime)
 {
-    if(!g_dashboardCreated) return;
+    if(alertTime <= g_lastAlertTime + 5) // Minimum 5 seconds between alerts
+        return;
     
-    // Show minimal info when outside window
-    string idleText = "OUTSIDE TRADING WINDOW";
-    string windowInfo = IntegerToString(StartHour) + ":" + StringFormat("%02d", StartMinute) + 
-                       " → " + IntegerToString(EndHour) + ":" + StringFormat("%02d", EndMinute);
+    string qualityText = EnumToString(quality);
+    string directionText = (direction > 0) ? "BULLISH" : "BEARISH";
+    string alertMessage = StringFormat("%s: %s %s Signal at %.5f", 
+                                      _Symbol, qualityText, directionText, price);
     
-    // Update only essential values
-    string valueName = "ST_VWAP_Dashboard_Value_3"; // Direction field
-    if(ObjectFind(0, valueName) >= 0)
-    {
-        ObjectSetString(0, valueName, OBJPROP_TEXT, idleText);
-        ObjectSetInteger(0, valueName, OBJPROP_COLOR, clrGray);
-    }
+    if(AlertPopup)
+        Alert(alertMessage);
     
-    valueName = "ST_VWAP_Dashboard_Value_17"; // Status field  
-    if(ObjectFind(0, valueName) >= 0)
-    {
-        ObjectSetString(0, valueName, OBJPROP_TEXT, windowInfo);
-        ObjectSetInteger(0, valueName, OBJPROP_COLOR, clrGray);
-    }
+    if(AlertSound && AlertSoundFile != "")
+        PlaySound(AlertSoundFile);
+    
+    Print("ENHANCED ALERT: ", alertMessage);
+    g_lastAlertTime = alertTime;
 }
 
 //+------------------------------------------------------------------+
-//| Cleanup dashboard |
+//| Cleanup Functions                                                |
 //+------------------------------------------------------------------+
 void CleanupDashboard()
 {
-    string prefixes[] = {"ST_VWAP_Dashboard_"};
-    
-    for(int p = 0; p < ArraySize(prefixes); p++)
+    // Remove all dashboard objects
+    for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
     {
-        for(int i = ObjectsTotal(0, 0) - 1; i >= 0; i--)
-        {
-            string objectName = ObjectName(0, i);
-            
-            if(StringFind(objectName, prefixes[p]) == 0)
-                ObjectDelete(0, objectName);
-        }
+        string objectName = ObjectName(0, i);
+        if(StringFind(objectName, "ESTVWAP_") == 0)
+            ObjectDelete(0, objectName);
     }
     
     g_dashboardCreated = false;
 }
 
-//+------------------------------------------------------------------+
-//| Cleanup visual objects |
-//+------------------------------------------------------------------+
 void CleanupVisualObjects()
 {
-    for(int i = ObjectsTotal(0, 0) - 1; i >= 0; i--)
+    for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
     {
         string objectName = ObjectName(0, i);
-        
-        if(StringFind(objectName, "ST_VWAP_Signal_") == 0)
+        if(StringFind(objectName, "ESTVWAP_Signal_") == 0)
             ObjectDelete(0, objectName);
     }
 }
+
+void CleanupOldObjects(const datetime& time[], int rates_total)
+{
+    if(rates_total <= SignalLifetimeBars) return;
+    
+    datetime cutoffTime = time[rates_total - SignalLifetimeBars];
+    
+    for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+    {
+        string objectName = ObjectName(0, i);
+        if(StringFind(objectName, "ESTVWAP_Signal_") == 0)
+        {
+            datetime objectTime = (datetime)ObjectGetInteger(0, objectName, OBJPROP_TIME);
+            if(objectTime < cutoffTime)
+                ObjectDelete(0, objectName);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Save Performance Data                                            |
+//+------------------------------------------------------------------+
+void SavePerformanceData()
+{
+    string fileName = "Enhanced_ST_VWAP_Performance.csv";
+    int fileHandle = FileOpen(fileName, FILE_WRITE | FILE_CSV);
+    
+    if(fileHandle != INVALID_HANDLE)
+    {
+        // Write header
+        FileWrite(fileHandle, "Timestamp", "TotalSignals", "WinRate", "ProfitFactor", 
+                 "AvgWin", "AvgLoss", "BestSignal", "WorstSignal", "SignalQuality");
+        
+        // Write current data
+        FileWrite(fileHandle, TimeToString(TimeCurrent()), 
+                 g_dashboardData.performance.totalSignals,
+                 g_dashboardData.performance.winRate,
+                 g_dashboardData.performance.profitFactor,
+                 g_dashboardData.performance.avgWinPoints,
+                 g_dashboardData.performance.avgLossPoints,
+                 g_dashboardData.performance.bestSignalPoints,
+                 g_dashboardData.performance.worstSignalPoints,
+                 g_dashboardData.performance.avgSignalQuality);
+        
+        FileClose(fileHandle);
+        Print("Performance data saved to: ", fileName);
+    }
+    else
+    {
+        Print("Failed to save performance data");
+    }
+}
+
+//+------------------------------------------------------------------+
