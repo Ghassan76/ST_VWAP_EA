@@ -1,235 +1,835 @@
 //+------------------------------------------------------------------+
-//|                                                   Supertrend.mq5 |
-//|                   Copyright © 2005, Jason Robinson (jnrtrading). |
-//|                                      http://www.jnrtrading.co.uk |
+//|                                        TradeAlgorithms.mqh      |
+//|                           Optimized Trading Algorithms v2.0     |
+//|                                  Performance Enhanced Library   |
 //+------------------------------------------------------------------+
-#property copyright "Copyright © 2005, Jason Robinson (jnrtrading)."
-#property link      "http://www.jnrtrading.co.uk"
-//---- номер версии индикатора
-#property version   "1.01"
-//---- отрисовка индикатора в основном окне
-#property indicator_chart_window
-//---- количество индикаторных буферов 4
-#property indicator_buffers 4
-//---- использовано всего четыре графических построения
-#property indicator_plots   4
-//+-----------------------------------+
-//|  Параметры отрисовки индикатора   |
-//+-----------------------------------+
-//---- отрисовка индикатора в виде линии
-#property indicator_type1 DRAW_LINE
-//---- в качестве окраски индикатора использован цвет Lime
-#property indicator_color1 clrLime
-//---- линия индикатора - сплошная
-#property indicator_style1 STYLE_SOLID
-//---- толщина линии индикатора равна 2
-#property indicator_width1 2
-//---- отображение метки сигнальной линии
-#property indicator_label1  "Supertrend Up"
-//+-----------------------------------+
-//|  Параметры отрисовки индикатора   |
-//+-----------------------------------+
-//---- отрисовка индикатора в виде линии
-#property indicator_type2 DRAW_LINE
-//---- в качестве окраски индикатора использовано три цвета
-#property indicator_color2 clrRed
-//---- линия индикатора - сплошная
-#property indicator_style2 STYLE_SOLID
-//---- толщина линии индикатора равна 2
-#property indicator_width2 2
-//---- отображение метки сигнальной линии
-#property indicator_label2  "Supertrend Down"
-//+----------------------------------------------+
-//|  Параметры отрисовки бычьего индикатора      |
-//+----------------------------------------------+
-//---- отрисовка индикатора 3 в виде значка
-#property indicator_type3   DRAW_ARROW
-//---- в качестве цвета бычей линии индикатора использован цвет MediumTurquoise
-#property indicator_color3  clrMediumTurquoise
-//---- линия индикатора 3 - непрерывная кривая
-#property indicator_style3  STYLE_SOLID
-//---- толщина линии индикатора 3 равна 4
-#property indicator_width3  4
-//---- отображение бычьей метки индикатора
-#property indicator_label3  "Buy Supertrend signal"
-//+----------------------------------------------+
-//|  Параметры отрисовки медвежьего индикатора   |
-//+----------------------------------------------+
-//---- отрисовка индикатора 4 в виде значка
-#property indicator_type4   DRAW_ARROW
-//---- в качестве цвета медвежьей линии индикатора использован цвет DarkOrange
-#property indicator_color4  clrDarkOrange
-//---- линия индикатора 2 - непрерывная кривая
-#property indicator_style4  STYLE_SOLID
-//---- толщина линии индикатора 4 равна 4
-#property indicator_width4  4
-//---- отображение медвежьей метки индикатора
-#property indicator_label4  "Sell Supertrend signal"
-//+----------------------------------------------+
-//| Входные параметры индикатора                 |
-//+----------------------------------------------+
-input int CCIPeriod=50; // Период индикатора CCI
-input int ATRPeriod=5;  // Период индикатора ATR
-input int Level=0;      // Уровень срабатывания CCI
-input int Shift=0;      // Сдвиг индикатора по горизонтали в барах
-//+----------------------------------------------+
-//---- объявление динамических массивов, которые будут в
-//---- дальнейшем использованы в качестве индикаторных буферов
-double TrendUp[],TrendDown[];
-double SignUp[];
-double SignDown[];
-//---- объявление целочисленных переменных начала отсчета данных
-int min_rates_total;
-//---- объявление целочисленных переменных для хендлов индикаторов
-int ATR_Handle,CCI_Handle;
+#property copyright "Optimized Trading Algorithms © 2025"
+#property link      "https://www.mql5.com"
+#property version   "2.00"
+
+#include <Trade\Trade.mqh>
+#include <Trade\SymbolInfo.mqh>
+#include <Trade\PositionInfo.mqh>
+
 //+------------------------------------------------------------------+
-//| Custom indicator initialization function                         |
-//+------------------------------------------------------------------+  
-void OnInit()
-  {
-//---- инициализация переменных начала отсчета данных
-   min_rates_total=MathMax(CCIPeriod,ATRPeriod);
-//---- получение хендла индикатора CCI
-   CCI_Handle=iCCI(NULL,0,CCIPeriod,PRICE_TYPICAL);
-   if(CCI_Handle==INVALID_HANDLE)Print(" Не удалось получить хендл индикатора CCI");
-//---- получение хендла индикатора ATR
-   ATR_Handle=iATR(NULL,0,ATRPeriod);
-   if(ATR_Handle==INVALID_HANDLE)Print(" Не удалось получить хендл индикатора ATR");
-//---- инициализации переменной для короткого имени индикатора
-   string shortname;
-   StringConcatenate(shortname,"Supertrend(",string(CCIPeriod),", ",string(ATRPeriod),", ",string(Shift),")");
-//---- создание имени для отображения в отдельном подокне и во всплывающей подсказке
-   IndicatorSetString(INDICATOR_SHORTNAME,shortname);
-//---- определение точности отображения значений индикатора
-   IndicatorSetInteger(INDICATOR_DIGITS,_Digits+1);
-
-//---- превращение динамического массива ExtBuffer[] в индикаторный буфер
-   SetIndexBuffer(0,TrendUp,INDICATOR_DATA);
-//---- осуществление сдвига индикатора по горизонтали на Shift
-   PlotIndexSetInteger(0,PLOT_SHIFT,Shift);
-//---- осуществление сдвига начала отсчета отрисовки индикатора
-   PlotIndexSetInteger(0,PLOT_DRAW_BEGIN,min_rates_total);
-//---- запрет на отрисовку индикатором пустых значений
-   PlotIndexSetDouble(0,PLOT_EMPTY_VALUE,0.0);
-//---- индексация элементов в буферах, как в таймсериях  
-   ArraySetAsSeries(TrendUp,true);
-
-//---- превращение динамического массива ExtBuffer[] в индикаторный буфер
-   SetIndexBuffer(1,TrendDown,INDICATOR_DATA);
-//---- осуществление сдвига индикатора по горизонтали на Shift
-   PlotIndexSetInteger(1,PLOT_SHIFT,Shift);
-//---- осуществление сдвига начала отсчета отрисовки индикатора
-   PlotIndexSetInteger(1,PLOT_DRAW_BEGIN,min_rates_total);
-//---- запрет на отрисовку индикатором пустых значений
-   PlotIndexSetDouble(1,PLOT_EMPTY_VALUE,0.0);
-//---- индексация элементов в буферах, как в таймсериях  
-   ArraySetAsSeries(TrendDown,true);
-
-//---- превращение динамического массива SignUp [] в индикаторный буфер
-   SetIndexBuffer(2,SignUp,INDICATOR_DATA);
-//---- осуществление сдвига индикатора 1 по горизонтали на Shift
-   PlotIndexSetInteger(2,PLOT_SHIFT,Shift);
-//---- осуществление сдвига начала отсчета отрисовки индикатора 1
-   PlotIndexSetInteger(2,PLOT_DRAW_BEGIN,min_rates_total);
-//---- индексация элементов в буферах, как в таймсериях  
-   ArraySetAsSeries(SignUp,true);
-//---- установка значений индикатора, которые не будут видимы на графике
-   PlotIndexSetDouble(2,PLOT_EMPTY_VALUE,0.0);
-//---- символ для индикатора
-   PlotIndexSetInteger(2,PLOT_ARROW,108);
-
-//---- превращение динамического массива SignDown[] в индикаторный буфер
-   SetIndexBuffer(3,SignDown,INDICATOR_DATA);
-//---- осуществление сдвига индикатора 2 по горизонтали на Shift
-   PlotIndexSetInteger(3,PLOT_SHIFT,Shift);
-//---- осуществление сдвига начала отсчета отрисовки индикатора 2
-   PlotIndexSetInteger(3,PLOT_DRAW_BEGIN,min_rates_total);
-//---- индексация элементов в буферах, как в таймсериях  
-   ArraySetAsSeries(SignDown,true);
-//---- установка значений индикатора, которые не будут видимы на графике
-   PlotIndexSetDouble(3,PLOT_EMPTY_VALUE,0.0);
-//---- символ для индикатора
-   PlotIndexSetInteger(3,PLOT_ARROW,108);
-//----
-  }
+//| Performance Optimization Constants                               |
 //+------------------------------------------------------------------+
-//| Custom indicator iteration function                              |
+#define MAX_RETRY_ATTEMPTS 5
+#define RETRY_DELAY_MS 100
+#define CACHE_UPDATE_INTERVAL 5    // seconds
+#define MAX_POSITIONS_CACHE 50
+
 //+------------------------------------------------------------------+
-int OnCalculate(const int rates_total,    // количество истории в барах на текущем тике
-                const int prev_calculated,// количество истории в барах на предыдущем тике
-                const datetime &time[],
-                const double &open[],
-                const double& high[],     // ценовой массив максимумов цены для расчета индикатора
-                const double& low[],      // ценовой массив минимумов цены для расчета индикатора
-                const double &close[],
-                const long &tick_volume[],
-                const long &volume[],
-                const int &spread[])
-  {
-//---- проверка количества баров на достаточность для расчета
-   if
-   (BarsCalculated(CCI_Handle)<rates_total
-    || BarsCalculated(ATR_Handle)<rates_total
-    || rates_total<min_rates_total) return(0);
+//| Enhanced Enumerations                                            |
+//+------------------------------------------------------------------+
+enum MarginMode
+{
+   FREEMARGIN=0,     // MM from free margin on account
+   BALANCE,          // MM from balance on account  
+   LOSSFREEMARGIN,   // MM by losses from free margin on account
+   LOSSBALANCE,      // MM by losses from balance on account
+   LOT               // Fixed lot without changes
+};
 
-//---- объявления локальных переменных
-   double ATR[],CCI[];
-   int limit,to_copy,bar;
+enum POSITION_STATE
+{
+   POSITION_UNKNOWN = 0,
+   POSITION_OPENING = 1,
+   POSITION_OPEN = 2,
+   POSITION_MODIFYING = 3,
+   POSITION_CLOSING = 4,
+   POSITION_CLOSED = 5
+};
 
-//---- индексация элементов в массивах, как в таймсериях  
-   ArraySetAsSeries(high,true);
-   ArraySetAsSeries(low,true);
-   ArraySetAsSeries(ATR,true);
-   ArraySetAsSeries(CCI,true);
+//+------------------------------------------------------------------+
+//| Performance Structures                                           |
+//+------------------------------------------------------------------+
+struct PositionCache
+{
+   ulong ticket;
+   ENUM_POSITION_TYPE type;
+   double volume;
+   double openPrice;
+   double stopLoss;
+   double takeProfit;
+   double currentPrice;
+   double profit;
+   datetime openTime;
+   datetime lastUpdate;
+   POSITION_STATE state;
+   
+   PositionCache() : ticket(0), type(POSITION_TYPE_BUY), volume(0), openPrice(0),
+                    stopLoss(0), takeProfit(0), currentPrice(0), profit(0),
+                    openTime(0), lastUpdate(0), state(POSITION_UNKNOWN) {}
+};
 
-//---- расчет стартового номера first для цикла пересчета баров
-   if(prev_calculated>rates_total || prev_calculated<=0) // проверка на первый старт расчета индикатора
-     {
-      limit=rates_total-min_rates_total;                 // стартовый номер для расчета всех баров
-     }
+struct TradeStatistics
+{
+   int totalTrades;
+   int winningTrades;
+   int losingTrades;
+   double totalProfit;
+   double totalLoss;
+   double maxProfit;
+   double maxLoss;
+   double profitFactor;
+   double winRate;
+   datetime lastTradeTime;
+   
+   TradeStatistics() : totalTrades(0), winningTrades(0), losingTrades(0),
+                      totalProfit(0), totalLoss(0), maxProfit(0), maxLoss(0),
+                      profitFactor(0), winRate(0), lastTradeTime(0) {}
+};
+
+struct MarketInfo
+{
+   double bid;
+   double ask;
+   double spread;
+   double point;
+   int digits;
+   double tickValue;
+   double tickSize;
+   datetime lastUpdate;
+   
+   MarketInfo() : bid(0), ask(0), spread(0), point(0), digits(0),
+                 tickValue(0), tickSize(0), lastUpdate(0) {}
+};
+
+//+------------------------------------------------------------------+
+//| Global Variables with Caching                                   |
+//+------------------------------------------------------------------+
+CTrade trade;
+CSymbolInfo symbolInfo;
+CPositionInfo positionInfo;
+
+// Position caching for performance
+PositionCache g_positionCache[];
+int g_cacheSize = 0;
+datetime g_lastCacheUpdate = 0;
+
+// Market info caching
+MarketInfo g_marketInfo;
+
+// Trade statistics
+TradeStatistics g_tradeStats;
+
+// Error handling
+static int g_lastError = 0;
+static datetime g_lastErrorTime = 0;
+
+//+------------------------------------------------------------------+
+//| Performance Optimization Functions                               |
+//+------------------------------------------------------------------+
+void UpdateMarketInfoCache(string symbol)
+{
+   datetime currentTime = TimeCurrent();
+   
+   // Update cache every CACHE_UPDATE_INTERVAL seconds
+   if(currentTime < g_marketInfo.lastUpdate + CACHE_UPDATE_INTERVAL)
+      return;
+   
+   if(!symbolInfo.Name(symbol))
+   {
+      Print("ERROR: Failed to select symbol ", symbol);
+      return;
+   }
+   
+   g_marketInfo.bid = symbolInfo.Bid();
+   g_marketInfo.ask = symbolInfo.Ask();
+   g_marketInfo.spread = symbolInfo.Spread();
+   g_marketInfo.point = symbolInfo.Point();
+   g_marketInfo.digits = (int)symbolInfo.Digits();
+   g_marketInfo.tickValue = symbolInfo.TradeTickValue();
+   g_marketInfo.tickSize = symbolInfo.TradeTickSize();
+   g_marketInfo.lastUpdate = currentTime;
+}
+
+void UpdatePositionCache(string symbol, ulong magicNumber = 0)
+{
+   datetime currentTime = TimeCurrent();
+   
+   // Update cache every few seconds for performance
+   if(currentTime < g_lastCacheUpdate + 2)
+      return;
+   
+   g_lastCacheUpdate = currentTime;
+   g_cacheSize = 0;
+   
+   // Resize cache array if needed
+   if(ArraySize(g_positionCache) < MAX_POSITIONS_CACHE)
+      ArrayResize(g_positionCache, MAX_POSITIONS_CACHE);
+   
+   // Cache all relevant positions
+   for(int i = 0; i < PositionsTotal() && g_cacheSize < MAX_POSITIONS_CACHE; i++)
+   {
+      if(positionInfo.SelectByIndex(i))
+      {
+         if(positionInfo.Symbol() == symbol && 
+            (magicNumber == 0 || positionInfo.Magic() == magicNumber))
+         {
+            g_positionCache[g_cacheSize].ticket = positionInfo.Ticket();
+            g_positionCache[g_cacheSize].type = (ENUM_POSITION_TYPE)positionInfo.PositionType();
+            g_positionCache[g_cacheSize].volume = positionInfo.Volume();
+            g_positionCache[g_cacheSize].openPrice = positionInfo.PriceOpen();
+            g_positionCache[g_cacheSize].stopLoss = positionInfo.StopLoss();
+            g_positionCache[g_cacheSize].takeProfit = positionInfo.TakeProfit();
+            g_positionCache[g_cacheSize].currentPrice = positionInfo.PriceCurrent();
+            g_positionCache[g_cacheSize].profit = positionInfo.Profit();
+            g_positionCache[g_cacheSize].openTime = positionInfo.Time();
+            g_positionCache[g_cacheSize].lastUpdate = currentTime;
+            g_positionCache[g_cacheSize].state = POSITION_OPEN;
+            
+            g_cacheSize++;
+         }
+      }
+   }
+}
+
+int FindCachedPosition(ENUM_POSITION_TYPE type, string symbol)
+{
+   for(int i = 0; i < g_cacheSize; i++)
+   {
+      if(g_positionCache[i].type == type)
+         return i;
+   }
+   return -1;
+}
+
+bool HasOpenPosition(ENUM_POSITION_TYPE type, string symbol, ulong magicNumber = 0)
+{
+   UpdatePositionCache(symbol, magicNumber);
+   return FindCachedPosition(type, symbol) >= 0;
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced Error Handling                                          |
+//+------------------------------------------------------------------+
+bool HandleTradeError(int errorCode, string operation)
+{
+   g_lastError = errorCode;
+   g_lastErrorTime = TimeCurrent();
+   
+   switch(errorCode)
+   {
+      case TRADE_RETCODE_REQUOTE:
+      case TRADE_RETCODE_PRICE_OFF:
+      case TRADE_RETCODE_PRICE_CHANGED:
+         Print("Retriable error in ", operation, ": ", errorCode, " - Will retry");
+         return true; // Retriable error
+         
+      case TRADE_RETCODE_INVALID_STOPS:
+         Print("Invalid stops in ", operation, ": ", errorCode);
+         return false;
+         
+      case TRADE_RETCODE_NO_MONEY:
+         Print("Insufficient funds for ", operation, ": ", errorCode);
+         return false;
+         
+      case TRADE_RETCODE_MARKET_CLOSED:
+         Print("Market closed for ", operation, ": ", errorCode);
+         return false;
+         
+      case TRADE_RETCODE_DONE:
+      case TRADE_RETCODE_DONE_PARTIAL:
+         return false; // Success, no retry needed
+         
+      default:
+         Print("Trade error in ", operation, ": ", errorCode);
+         return false;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced Lot Size Calculation                                    |
+//+------------------------------------------------------------------+
+double GetLot(double MM, MarginMode MMMode, string symbol)
+{
+   UpdateMarketInfoCache(symbol);
+   
+   if(g_marketInfo.point <= 0 || g_marketInfo.tickValue <= 0)
+   {
+      Print("WARNING: Invalid market info, using default lot size");
+      return 0.1;
+   }
+   
+   double lot = 0.1;
+   double margin = 0;
+   
+   switch(MMMode)
+   {
+      case FREEMARGIN:
+         margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+         if(margin > 0)
+            lot = NormalizeDouble(margin * MM / 100000, 2);
+         break;
+         
+      case BALANCE:
+         margin = AccountInfoDouble(ACCOUNT_BALANCE);
+         if(margin > 0)
+            lot = NormalizeDouble(margin * MM / 100000, 2);
+         break;
+         
+      case LOSSFREEMARGIN:
+         margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+         if(margin > 0)
+         {
+            double riskAmount = margin * MM / 100.0;
+            lot = NormalizeDouble(riskAmount / 1000, 2); // Simplified risk calculation
+         }
+         break;
+         
+      case LOSSBALANCE:
+         margin = AccountInfoDouble(ACCOUNT_BALANCE);
+         if(margin > 0)
+         {
+            double riskAmount = margin * MM / 100.0;
+            lot = NormalizeDouble(riskAmount / 1000, 2); // Simplified risk calculation
+         }
+         break;
+         
+      case LOT:
+      default:
+         lot = MM;
+         break;
+   }
+   
+   // Validate lot size against symbol specifications
+   if(!symbolInfo.Name(symbol))
+      return 0.1;
+   
+   double minLot = symbolInfo.LotsMin();
+   double maxLot = symbolInfo.LotsMax();
+   double stepLot = symbolInfo.LotsStep();
+   
+   if(stepLot > 0)
+      lot = MathFloor(lot / stepLot) * stepLot;
+   
+   lot = MathMax(minLot, MathMin(maxLot, lot));
+   
+   return NormalizeDouble(lot, 2);
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced Position Opening Functions                              |
+//+------------------------------------------------------------------+
+bool BuyPositionOpen(bool Signal, string Symb, datetime SignalTime, 
+                     double MM, MarginMode MMMode, int Deviation, 
+                     int StopLoss, int TakeProfit, ulong MagicNumber = 0)
+{
+   if(!Signal)
+      return false;
+   
+   // Check if position already exists
+   if(HasOpenPosition(POSITION_TYPE_BUY, Symb, MagicNumber))
+   {
+      if(MagicNumber > 0)
+         Print("BUY position already exists for ", Symb, " with Magic: ", MagicNumber);
+      return false;
+   }
+   
+   UpdateMarketInfoCache(Symb);
+   
+   double lot = GetLot(MM, MMMode, Symb);
+   if(lot <= 0)
+   {
+      Print("ERROR: Invalid lot size calculated: ", lot);
+      return false;
+   }
+   
+   double price = g_marketInfo.ask;
+   if(price <= 0)
+   {
+      Print("ERROR: Invalid ask price: ", price);
+      return false;
+   }
+   
+   // Calculate SL and TP with validation
+   double sl = 0, tp = 0;
+   if(StopLoss > 0)
+   {
+      sl = price - StopLoss * g_marketInfo.point;
+      sl = NormalizeDouble(sl, g_marketInfo.digits);
+   }
+   
+   if(TakeProfit > 0)
+   {
+      tp = price + TakeProfit * g_marketInfo.point;
+      tp = NormalizeDouble(tp, g_marketInfo.digits);
+   }
+   
+   // Validate stop levels
+   if(!ValidateStopLevels(Symb, price, sl, tp, true))
+      return false;
+   
+   // Configure trade object
+   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetDeviationInPoints(Deviation);
+   
+   // Execute trade with retry logic
+   bool result = false;
+   for(int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++)
+   {
+      result = trade.Buy(lot, Symb, price, sl, tp);
+      
+      if(result)
+      {
+         ulong ticket = trade.ResultOrder();
+         Print("BUY position opened successfully - Ticket: ", ticket, 
+               " Lot: ", lot, " Price: ", price, " SL: ", sl, " TP: ", tp);
+         
+         // Update trade statistics
+         UpdateTradeStatistics(true, 0); // Position opened
+         
+         // Invalidate position cache
+         g_lastCacheUpdate = 0;
+         return true;
+      }
+      
+      int errorCode = trade.ResultRetcode();
+      if(!HandleTradeError(errorCode, "BuyPositionOpen"))
+         break;
+      
+      if(attempt < MAX_RETRY_ATTEMPTS)
+      {
+         Sleep(RETRY_DELAY_MS);
+         // Update price for retry
+         UpdateMarketInfoCache(Symb);
+         price = g_marketInfo.ask;
+      }
+   }
+   
+   Print("Failed to open BUY position after ", MAX_RETRY_ATTEMPTS, " attempts. Last error: ", trade.ResultRetcode());
+   return false;
+}
+
+bool SellPositionOpen(bool Signal, string Symb, datetime SignalTime, 
+                      double MM, MarginMode MMMode, int Deviation, 
+                      int StopLoss, int TakeProfit, ulong MagicNumber = 0)
+{
+   if(!Signal)
+      return false;
+   
+   // Check if position already exists
+   if(HasOpenPosition(POSITION_TYPE_SELL, Symb, MagicNumber))
+   {
+      if(MagicNumber > 0)
+         Print("SELL position already exists for ", Symb, " with Magic: ", MagicNumber);
+      return false;
+   }
+   
+   UpdateMarketInfoCache(Symb);
+   
+   double lot = GetLot(MM, MMMode, Symb);
+   if(lot <= 0)
+   {
+      Print("ERROR: Invalid lot size calculated: ", lot);
+      return false;
+   }
+   
+   double price = g_marketInfo.bid;
+   if(price <= 0)
+   {
+      Print("ERROR: Invalid bid price: ", price);
+      return false;
+   }
+   
+   // Calculate SL and TP with validation
+   double sl = 0, tp = 0;
+   if(StopLoss > 0)
+   {
+      sl = price + StopLoss * g_marketInfo.point;
+      sl = NormalizeDouble(sl, g_marketInfo.digits);
+   }
+   
+   if(TakeProfit > 0)
+   {
+      tp = price - TakeProfit * g_marketInfo.point;
+      tp = NormalizeDouble(tp, g_marketInfo.digits);
+   }
+   
+   // Validate stop levels
+   if(!ValidateStopLevels(Symb, price, sl, tp, false))
+      return false;
+   
+   // Configure trade object
+   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetDeviationInPoints(Deviation);
+   
+   // Execute trade with retry logic
+   bool result = false;
+   for(int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++)
+   {
+      result = trade.Sell(lot, Symb, price, sl, tp);
+      
+      if(result)
+      {
+         ulong ticket = trade.ResultOrder();
+         Print("SELL position opened successfully - Ticket: ", ticket, 
+               " Lot: ", lot, " Price: ", price, " SL: ", sl, " TP: ", tp);
+         
+         // Update trade statistics
+         UpdateTradeStatistics(true, 0); // Position opened
+         
+         // Invalidate position cache
+         g_lastCacheUpdate = 0;
+         return true;
+      }
+      
+      int errorCode = trade.ResultRetcode();
+      if(!HandleTradeError(errorCode, "SellPositionOpen"))
+         break;
+      
+      if(attempt < MAX_RETRY_ATTEMPTS)
+      {
+         Sleep(RETRY_DELAY_MS);
+         // Update price for retry
+         UpdateMarketInfoCache(Symb);
+         price = g_marketInfo.bid;
+      }
+   }
+   
+   Print("Failed to open SELL position after ", MAX_RETRY_ATTEMPTS, " attempts. Last error: ", trade.ResultRetcode());
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced Position Closing Functions                              |
+//+------------------------------------------------------------------+
+bool BuyPositionClose(bool Signal, string Symb, int Deviation, ulong MagicNumber = 0)
+{
+   if(!Signal)
+      return false;
+   
+   UpdatePositionCache(Symb, MagicNumber);
+   
+   // Find BUY position in cache
+   int cacheIndex = FindCachedPosition(POSITION_TYPE_BUY, Symb);
+   if(cacheIndex < 0)
+      return false; // No BUY position found
+   
+   ulong ticket = g_positionCache[cacheIndex].ticket;
+   double profit = g_positionCache[cacheIndex].profit;
+   
+   // Configure trade object
+   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetDeviationInPoints(Deviation);
+   
+   // Execute close with retry logic
+   bool result = false;
+   for(int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++)
+   {
+      result = trade.PositionClose(ticket);
+      
+      if(result)
+      {
+         Print("BUY position closed successfully - Ticket: ", ticket, " Profit: ", DoubleToString(profit, 2));
+         
+         // Update trade statistics
+         UpdateTradeStatistics(false, profit); // Position closed
+         
+         // Invalidate position cache
+         g_lastCacheUpdate = 0;
+         return true;
+      }
+      
+      int errorCode = trade.ResultRetcode();
+      if(!HandleTradeError(errorCode, "BuyPositionClose"))
+         break;
+      
+      if(attempt < MAX_RETRY_ATTEMPTS)
+         Sleep(RETRY_DELAY_MS);
+   }
+   
+   Print("Failed to close BUY position after ", MAX_RETRY_ATTEMPTS, " attempts. Last error: ", trade.ResultRetcode());
+   return false;
+}
+
+bool SellPositionClose(bool Signal, string Symb, int Deviation, ulong MagicNumber = 0)
+{
+   if(!Signal)
+      return false;
+   
+   UpdatePositionCache(Symb, MagicNumber);
+   
+   // Find SELL position in cache
+   int cacheIndex = FindCachedPosition(POSITION_TYPE_SELL, Symb);
+   if(cacheIndex < 0)
+      return false; // No SELL position found
+   
+   ulong ticket = g_positionCache[cacheIndex].ticket;
+   double profit = g_positionCache[cacheIndex].profit;
+   
+   // Configure trade object
+   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetDeviationInPoints(Deviation);
+   
+   // Execute close with retry logic
+   bool result = false;
+   for(int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++)
+   {
+      result = trade.PositionClose(ticket);
+      
+      if(result)
+      {
+         Print("SELL position closed successfully - Ticket: ", ticket, " Profit: ", DoubleToString(profit, 2));
+         
+         // Update trade statistics
+         UpdateTradeStatistics(false, profit); // Position closed
+         
+         // Invalidate position cache
+         g_lastCacheUpdate = 0;
+         return true;
+      }
+      
+      int errorCode = trade.ResultRetcode();
+      if(!HandleTradeError(errorCode, "SellPositionClose"))
+         break;
+      
+      if(attempt < MAX_RETRY_ATTEMPTS)
+         Sleep(RETRY_DELAY_MS);
+   }
+   
+   Print("Failed to close SELL position after ", MAX_RETRY_ATTEMPTS, " attempts. Last error: ", trade.ResultRetcode());
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Position Validation Functions                                    |
+//+------------------------------------------------------------------+
+bool ValidateStopLevels(string symbol, double price, double sl, double tp, bool isBuy)
+{
+   if(!symbolInfo.Name(symbol))
+      return false;
+   
+   int stopsLevel = (int)symbolInfo.StopsLevel();
+   double minDistance = stopsLevel * symbolInfo.Point();
+   
+   if(stopsLevel > 0)
+   {
+      if(isBuy)
+      {
+         if(sl > 0 && (price - sl) < minDistance)
+         {
+            Print("WARNING: SL too close to price. Required distance: ", minDistance);
+            return false;
+         }
+         
+         if(tp > 0 && (tp - price) < minDistance)
+         {
+            Print("WARNING: TP too close to price. Required distance: ", minDistance);
+            return false;
+         }
+      }
+      else // Sell
+      {
+         if(sl > 0 && (sl - price) < minDistance)
+         {
+            Print("WARNING: SL too close to price. Required distance: ", minDistance);
+            return false;
+         }
+         
+         if(tp > 0 && (price - tp) < minDistance)
+         {
+            Print("WARNING: TP too close to price. Required distance: ", minDistance);
+            return false;
+         }
+      }
+   }
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Trade Statistics Functions                                       |
+//+------------------------------------------------------------------+
+void UpdateTradeStatistics(bool isOpening, double profit)
+{
+   if(isOpening)
+   {
+      // Position opened
+      g_tradeStats.lastTradeTime = TimeCurrent();
+   }
    else
-     {
-      limit=rates_total-prev_calculated;                 // стартовый номер для расчета новых баров
-     }
+   {
+      // Position closed
+      g_tradeStats.totalTrades++;
+      
+      if(profit > 0)
+      {
+         g_tradeStats.winningTrades++;
+         g_tradeStats.totalProfit += profit;
+         
+         if(profit > g_tradeStats.maxProfit)
+            g_tradeStats.maxProfit = profit;
+      }
+      else if(profit < 0)
+      {
+         g_tradeStats.losingTrades++;
+         g_tradeStats.totalLoss += MathAbs(profit);
+         
+         if(MathAbs(profit) > g_tradeStats.maxLoss)
+            g_tradeStats.maxLoss = MathAbs(profit);
+      }
+      
+      // Calculate derived statistics
+      if(g_tradeStats.totalTrades > 0)
+      {
+         g_tradeStats.winRate = ((double)g_tradeStats.winningTrades / g_tradeStats.totalTrades) * 100.0;
+      }
+      
+      if(g_tradeStats.totalLoss > 0)
+      {
+         g_tradeStats.profitFactor = g_tradeStats.totalProfit / g_tradeStats.totalLoss;
+      }
+      
+      g_tradeStats.lastTradeTime = TimeCurrent();
+   }
+}
 
-   to_copy=limit+1;
+void PrintTradeStatistics()
+{
+   Print("=== Trade Statistics ===");
+   Print("Total Trades: ", g_tradeStats.totalTrades);
+   Print("Winning Trades: ", g_tradeStats.winningTrades);
+   Print("Losing Trades: ", g_tradeStats.losingTrades);
+   Print("Win Rate: ", DoubleToString(g_tradeStats.winRate, 2), "%");
+   Print("Total Profit: ", DoubleToString(g_tradeStats.totalProfit, 2));
+   Print("Total Loss: ", DoubleToString(g_tradeStats.totalLoss, 2));
+   Print("Net Profit: ", DoubleToString(g_tradeStats.totalProfit - g_tradeStats.totalLoss, 2));
+   Print("Profit Factor: ", DoubleToString(g_tradeStats.profitFactor, 2));
+   Print("Max Profit: ", DoubleToString(g_tradeStats.maxProfit, 2));
+   Print("Max Loss: ", DoubleToString(g_tradeStats.maxLoss, 2));
+   Print("Last Trade: ", TimeToString(g_tradeStats.lastTradeTime));
+   Print("=======================");
+}
 
-//---- копируем вновь появившиеся данные в массив ATR[]
-   if(CopyBuffer(ATR_Handle,0,0,to_copy,ATR)<=0) return(0);
+//+------------------------------------------------------------------+
+//| Utility Functions                                                |
+//+------------------------------------------------------------------+
+void GlobalVariableDel_(string symbol)
+{
+   string prefix = symbol + "_";
+   for(int i = GlobalVariablesTotal() - 1; i >= 0; i--)
+   {
+      string name = GlobalVariableName(i);
+      if(StringFind(name, prefix) == 0)
+         GlobalVariableDel(name);
+   }
+}
 
-   to_copy++;
-//---- копируем вновь появившиеся данные в массив CCI[]
-   if(CopyBuffer(CCI_Handle,0,0,to_copy,CCI)<=0) return(0);
+void LoadHistory(datetime time, string symbol, ENUM_TIMEFRAMES timeframe)
+{
+   // Improved history loading with error checking
+   datetime serverTime = TimeCurrent();
+   datetime fromTime = time > 0 ? time : serverTime - PeriodSeconds(timeframe) * 1000;
+   
+   int bars = Bars(symbol, timeframe, fromTime, serverTime);
+   if(bars < 100) // Ensure minimum history
+   {
+      int attempts = 0;
+      while(bars < 100 && attempts < 10)
+      {
+         Sleep(100);
+         bars = Bars(symbol, timeframe, fromTime, serverTime);
+         attempts++;
+      }
+      
+      if(bars < 100)
+         Print("WARNING: Limited history available: ", bars, " bars");
+   }
+}
 
-//---- основной цикл расчета индикатора
-   for(bar=limit; bar>=0 && !IsStopped(); bar--)
-     {
-      TrendUp[bar]=0.0;
-      TrendDown[bar]=0.0;
-      SignUp[bar]=0.0;
-      SignDown[bar]=0.0;
+//+------------------------------------------------------------------+
+//| New Bar Detection Class                                          |
+//+------------------------------------------------------------------+
+class CIsNewBar
+{
+private:
+   datetime m_lastbar_time;
+   string   m_symbol;
+   ENUM_TIMEFRAMES m_timeframe;
 
-      if(CCI[bar]>=Level && CCI[bar+1]<Level) TrendUp[bar]=TrendDown[bar+1];
+public:
+   CIsNewBar() : m_lastbar_time(0), m_symbol(""), m_timeframe(PERIOD_CURRENT) {}
+   
+   bool IsNewBar(string symbol, ENUM_TIMEFRAMES timeframe)
+   {
+      if(m_symbol != symbol || m_timeframe != timeframe)
+      {
+         m_symbol = symbol;
+         m_timeframe = timeframe;
+         m_lastbar_time = 0; // Reset for new symbol/timeframe
+      }
+      
+      datetime current_time = iTime(symbol, timeframe, 0);
+      
+      if(current_time > m_lastbar_time)
+      {
+         m_lastbar_time = current_time;
+         return true;
+      }
+      
+      return false;
+   }
+   
+   void Reset()
+   {
+      m_lastbar_time = 0;
+   }
+};
 
-      if(CCI[bar]<=Level && CCI[bar+1]>Level) TrendDown[bar]=TrendUp[bar+1];
+//+------------------------------------------------------------------+
+//| Performance Monitoring                                           |
+//+------------------------------------------------------------------+
+void PrintPerformanceSummary()
+{
+   Print("=== Performance Summary ===");
+   Print("Position Cache Size: ", g_cacheSize);
+   Print("Last Cache Update: ", TimeToString(g_lastCacheUpdate));
+   Print("Market Info Last Update: ", TimeToString(g_marketInfo.lastUpdate));
+   Print("Current Spread: ", DoubleToString(g_marketInfo.spread, 1), " points");
+   Print("Last Error: ", g_lastError, " at ", TimeToString(g_lastErrorTime));
+   
+   // Print trade statistics
+   PrintTradeStatistics();
+   
+   Print("=========================");
+}
 
-      if(CCI[bar]>Level)
-        {
-         TrendUp[bar]=low[bar]-ATR[bar];
-         if(TrendUp[bar]<TrendUp[bar+1] && CCI[bar+1]>=Level) TrendUp[bar]=TrendUp[bar+1];
-        }
+//+------------------------------------------------------------------+
+//| Initialization and Cleanup                                       |
+//+------------------------------------------------------------------+
+void InitializeTradeAlgorithms(string symbol)
+{
+   // Initialize caches
+   ArrayResize(g_positionCache, MAX_POSITIONS_CACHE);
+   g_cacheSize = 0;
+   g_lastCacheUpdate = 0;
+   
+   // Initialize market info
+   UpdateMarketInfoCache(symbol);
+   
+   // Initialize statistics
+   ZeroMemory(g_tradeStats);
+   
+   // Reset error tracking
+   g_lastError = 0;
+   g_lastErrorTime = 0;
+   
+   Print("Trade algorithms initialized for ", symbol);
+}
 
-      if(CCI[bar]<Level)
-        {
-         TrendDown[bar]=high[bar]+ATR[bar];
-         if(TrendDown[bar]>TrendDown[bar+1] && CCI[bar+1]<=Level) TrendDown[bar]=TrendDown[bar+1];
-        }
+void CleanupTradeAlgorithms()
+{
+   // Print final statistics
+   PrintPerformanceSummary();
+   
+   // Clear caches
+   ArrayResize(g_positionCache, 0);
+   g_cacheSize = 0;
+   
+   Print("Trade algorithms cleanup completed");
+}
 
-      if(TrendDown[bar+1]!=0.0 && TrendUp[bar]!=0.0) SignUp[bar]=TrendUp[bar];
-
-      if(TrendUp[bar+1]!=0.0 && TrendDown[bar]!=0.0) SignDown[bar]=TrendDown[bar];
-     }
-//----    
-   return(rates_total);
-  }
 //+------------------------------------------------------------------+
