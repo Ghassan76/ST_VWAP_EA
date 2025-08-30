@@ -281,7 +281,7 @@ CPositionInfo  positionInfo;
 COrderInfo     orderInfo;
 
 // Optimized position tracking with memory pool
-CMemoryPool<PositionTracker> g_positionPool;
+CPositionPool g_positionPool;
 int g_activePositions[];
 int g_positionCount = 0;
 
