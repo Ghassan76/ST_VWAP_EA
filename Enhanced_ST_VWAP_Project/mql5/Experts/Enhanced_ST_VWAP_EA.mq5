@@ -131,8 +131,6 @@ input uint    SignalBar                   = 1;         // Bar number for signal
 
 // Signal Filtering
 input group "=== SIGNAL FILTERING ==="
-input bool    FilterSignalsOnClose        = true;      // Only take signals on bar close
-input bool    RequireVWAPConfirmation     = true;      // Require VWAP confirmation for signals
 input double  MinPointsFromVWAP           = 50.0;      // Minimum distance from VWAP in points
 
 //+------------------------------------------------------------------+
@@ -160,12 +158,15 @@ int OnInit()
 {
     // Initialize trading algorithms
     trade.SetExpertMagicNumber(MagicNumber);
+
+    // Configure state durations
+    ConfigureStateDurations(FreezeDurationMinutes, PostTradeCooldownMin);
     
     // Get handle for Enhanced ST&VWAP indicator
     STVWAPHandle = iCustom(_Symbol, InpIndTimeframe, "Enhanced_ST_VWAP_Indicator",
                           ATRPeriod, STMultiplier, SourcePrice, TakeWicksIntoAccount,
                           VWAPPriceMethod, MinVolumeThreshold, ResetVWAPDaily,
-                          EnableVWAPFilter, true); // ShowVWAPLine = true
+                          EnableVWAPFilter, true, MinPointsFromVWAP);
     
     if(STVWAPHandle == INVALID_HANDLE)
     {
@@ -307,92 +308,45 @@ void ProcessTradingSignals()
     // Check for new bar or force recount
     if(!SignalBar || NB.IsNewBar(_Symbol, InpIndTimeframe) || Recount)
     {
-        // Reset signal flags
-        BUY_Open = false;
-        SELL_Open = false;
-        BUY_Close = false;
-        SELL_Close = false;
+        BUY_Open = SELL_Open = BUY_Close = SELL_Close = false;
         Recount = false;
-        
-        // Get SuperTrend signals (buffers 2 and 3 contain buy/sell signals)
-        double BuySignal[1], SellSignal[1];
-        double SuperTrend[1], VWAP[1];
-        
-        // Copy signal buffers from Enhanced ST&VWAP indicator
-        if(CopyBuffer(STVWAPHandle, 2, SignalBar, 1, BuySignal) <= 0) {Recount = true; return;}
-        if(CopyBuffer(STVWAPHandle, 3, SignalBar, 1, SellSignal) <= 0) {Recount = true; return;}
-        
-        // Copy SuperTrend and VWAP values for additional filtering
-        if(CopyBuffer(STVWAPHandle, 0, SignalBar, 1, SuperTrend) <= 0) {Recount = true; return;}
-        if(CopyBuffer(STVWAPHandle, 2, SignalBar, 1, VWAP) <= 0) {Recount = true; return;} // VWAP is buffer 2
-        
+
+        double signal[1];
+        if(CopyBuffer(STVWAPHandle, 6, SignalBar, 1, signal) <= 0)
+        {
+            Recount = true;
+            return;
+        }
+
         datetime signalTime = iTime(_Symbol, InpIndTimeframe, SignalBar);
-        double currentPrice = iClose(_Symbol, InpIndTimeframe, SignalBar);
-        
-        // Process buy signals
-        if(BuySignal[0] != 0 && BuySignal[0] != EMPTY_VALUE)
+        double price = iClose(_Symbol, InpIndTimeframe, SignalBar);
+
+        if(signal[0] > 0)
         {
-            bool vwapOK = !RequireVWAPConfirmation || 
-                         (VWAP[0] != 0 && VWAP[0] != EMPTY_VALUE && 
-                          MathAbs(currentPrice - VWAP[0]) >= MinPointsFromVWAP * _Point);
-            
-            if(vwapOK)
-            {
-                if(EnableBuy && EnableEntry) 
-                    BUY_Open = true;
-                if(EnableSell) 
-                    SELL_Close = true;
-                    
-                UpSignalTime = signalTime + TimeShiftSec;
-                
-                if(VerboseLogs)
-                    Print("BUY signal detected at ", TimeToString(signalTime), ", Price: ", DoubleToString(currentPrice, _Digits));
-            }
+            if(EnableBuy && EnableEntry)
+                BUY_Open = true;
+            if(EnableSell)
+                SELL_Close = true;
+
+            UpSignalTime = signalTime + TimeShiftSec;
+
+            if(VerboseLogs)
+                Print("BUY signal detected at ", TimeToString(signalTime), ", Price: ", DoubleToString(price, _Digits));
         }
-        
-        // Process sell signals  
-        if(SellSignal[0] != 0 && SellSignal[0] != EMPTY_VALUE)
+        else if(signal[0] < 0)
         {
-            bool vwapOK = !RequireVWAPConfirmation || 
-                         (VWAP[0] != 0 && VWAP[0] != EMPTY_VALUE && 
-                          MathAbs(currentPrice - VWAP[0]) >= MinPointsFromVWAP * _Point);
-            
-            if(vwapOK)
-            {
-                if(EnableSell && EnableEntry) 
-                    SELL_Open = true;
-                if(EnableBuy) 
-                    BUY_Close = true;
-                    
-                DnSignalTime = signalTime + TimeShiftSec;
-                
-                if(VerboseLogs)
-                    Print("SELL signal detected at ", TimeToString(signalTime), ", Price: ", DoubleToString(currentPrice, _Digits));
-            }
-        }
-        
-        // Additional trend confirmation using SuperTrend direction
-        if(BUY_Open || SELL_Open)
-        {
-            double STDirection[1];
-            if(CopyBuffer(STVWAPHandle, 3, SignalBar, 1, STDirection) > 0) // Direction buffer
-            {
-                if(BUY_Open && STDirection[0] <= 0) // SuperTrend not bullish
-                {
-                    BUY_Open = false;
-                    if(VerboseLogs) Print("BUY signal rejected - SuperTrend not bullish");
-                }
-                
-                if(SELL_Open && STDirection[0] >= 0) // SuperTrend not bearish
-                {
-                    SELL_Open = false;
-                    if(VerboseLogs) Print("SELL signal rejected - SuperTrend not bearish");
-                }
-            }
+            if(EnableSell && EnableEntry)
+                SELL_Open = true;
+            if(EnableBuy)
+                BUY_Close = true;
+
+            DnSignalTime = signalTime + TimeShiftSec;
+
+            if(VerboseLogs)
+                Print("SELL signal detected at ", TimeToString(signalTime), ", Price: ", DoubleToString(price, _Digits));
         }
     }
-    
-    // Execute trading operations
+
     ExecuteTrades();
 }
 
