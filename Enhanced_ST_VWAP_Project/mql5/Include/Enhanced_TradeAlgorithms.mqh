@@ -581,6 +581,26 @@ void RemovePositionTracker(ulong ticket)
       g_positionCount--;
    }
 }
+void RebuildPositionCache()
+{
+   g_positionPool.Clear();
+   g_positionCount = 0;
+   
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      
+      double entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl = PositionGetDouble(POSITION_SL);
+      double tp = PositionGetDouble(POSITION_TP);
+      
+      AddPositionTracker(ticket, entryPrice, sl, tp);
+   }
+   
+   Print("Enhanced trailing cache rebuilt: ", g_positionCount, " positions");
+}
 
 void UpdatePositionMetrics(ulong ticket)
 {
