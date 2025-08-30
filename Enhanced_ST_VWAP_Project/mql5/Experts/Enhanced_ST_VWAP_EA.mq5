@@ -602,11 +602,11 @@ void InitializeAnalytics()
 void InitializePerformanceTracking()
 {
     // Reset performance metrics
-    ZeroMemory(g_performanceMetrics);
+    g_performanceMetrics.Init();
     g_performanceMetrics.startTime = TimeCurrent();
     
     // Initialize market conditions
-    ZeroMemory(g_marketConditions);
+    g_marketConditions.Init();
     g_marketConditions.lastUpdate = TimeCurrent();
     
     if(VerboseLogs)
@@ -1521,12 +1521,7 @@ void CheckDailyReset()
 
 void ResetDailyStats()
 {
-    g_dailyStats.totalTrades = 0;
-    g_dailyStats.winTrades = 0;
-    g_dailyStats.loseTrades = 0;
-    g_dailyStats.totalProfit = 0;
-    g_dailyStats.maxDrawdown = 0;
-    g_dailyStats.lastTradeTime = 0;
+    g_dailyStats.Init();
 }
 
 void PrintDailyStats()
