@@ -1,15 +1,24 @@
 //+------------------------------------------------------------------+
 //|                                     Enhanced_TradeAlgorithms.mqh |
 //|                   Enhanced Trading Algorithms for ST&VWAP System |
+//|                                    Performance & Analytics v2.0   |
 //+------------------------------------------------------------------+
 #property copyright "Enhanced Trading Algorithms © 2025"
 #property link      "https://www.mql5.com"
-#property version   "1.00"
+#property version   "2.00"
 
 #include <Trade\Trade.mqh>
 #include <Trade\SymbolInfo.mqh>
 #include <Trade\PositionInfo.mqh>
 #include <Trade\OrderInfo.mqh>
+
+//+------------------------------------------------------------------+
+//| Performance Optimization Constants                               |
+//+------------------------------------------------------------------+
+#define MAX_CACHED_POSITIONS 100
+#define MEMORY_CLEANUP_INTERVAL 3600  // 1 hour
+#define PERFORMANCE_BUFFER_SIZE 1000
+#define MAX_HISTORY_RECORDS 10000
 
 //+------------------------------------------------------------------+
 //| Enumerations                                                     |
@@ -46,8 +55,17 @@ enum FREEZE_REASON
    FREEZE_MANUAL 
 };
 
+enum MARKET_STATE
+{
+   MARKET_UNKNOWN = 0,
+   MARKET_TRENDING,
+   MARKET_RANGING,
+   MARKET_VOLATILE,
+   MARKET_QUIET
+};
+
 //+------------------------------------------------------------------+
-//| Structures                                                       |
+//| Enhanced Structures for Performance & Analytics                 |
 //+------------------------------------------------------------------+
 struct SessionTime
 {
@@ -71,10 +89,14 @@ struct PositionTracker
    double entryPrice;
    double originalSL;
    double originalTP;
+   double maxProfit;          // Track maximum profit reached
+   double maxDrawdown;        // Track maximum drawdown
+   double runningPnL;         // Current unrealized P&L
    
    PositionTracker() : ticket(0), slModifications(0), tpModifications(0), 
                       lastTickTime(0), breakEvenExecuted(false), entryTime(0),
-                      entryPrice(0), originalSL(0), originalTP(0) {}
+                      entryPrice(0), originalSL(0), originalTP(0), maxProfit(0),
+                      maxDrawdown(0), runningPnL(0) {}
 };
 
 struct TradeStats
@@ -85,28 +107,157 @@ struct TradeStats
    double totalProfit;
    double maxDrawdown;
    datetime lastTradeTime;
+   double avgWinAmount;       // Average winning trade amount
+   double avgLossAmount;      // Average losing trade amount
+   double profitFactor;       // Gross profit / Gross loss
+   double sharpeRatio;        // Risk-adjusted return measure
+   double maxConsecutiveWins;
+   double maxConsecutiveLosses;
+   double currentStreak;      // Current win/loss streak
    
    TradeStats() : totalTrades(0), winTrades(0), loseTrades(0), 
-                 totalProfit(0), maxDrawdown(0), lastTradeTime(0) {}
+                 totalProfit(0), maxDrawdown(0), lastTradeTime(0),
+                 avgWinAmount(0), avgLossAmount(0), profitFactor(0),
+                 sharpeRatio(0), maxConsecutiveWins(0), maxConsecutiveLosses(0),
+                 currentStreak(0) {}
+};
+
+struct MarketConditions
+{
+   double volatility;         // ATR-based volatility measure
+   double trendStrength;      // Trend strength indicator
+   MARKET_STATE state;        // Current market state
+   double spreadCost;         // Current spread cost
+   double liquidity;          // Liquidity measure
+   datetime lastUpdate;       // Last update time
+   double momentum;           // Price momentum indicator
+   
+   MarketConditions() : volatility(0), trendStrength(0), state(MARKET_UNKNOWN),
+                       spreadCost(0), liquidity(0), lastUpdate(0), momentum(0) {}
+};
+
+struct PerformanceMetrics
+{
+   double totalReturn;        // Total return percentage
+   double annualizedReturn;   // Annualized return
+   double volatilityIndex;    // Strategy volatility
+   double maxDrawdownPercent; // Max drawdown as percentage
+   double recoveryFactor;     // Total return / Max drawdown
+   double calmarRatio;        // Annualized return / Max drawdown
+   double sortinoRatio;       // Downside deviation adjusted return
+   int tradesPerDay;          // Average trades per day
+   double avgHoldingTime;     // Average holding time in hours
+   datetime startTime;        // Strategy start time
+   
+   PerformanceMetrics() : totalReturn(0), annualizedReturn(0), volatilityIndex(0),
+                         maxDrawdownPercent(0), recoveryFactor(0), calmarRatio(0),
+                         sortinoRatio(0), tradesPerDay(0), avgHoldingTime(0), startTime(0) {}
 };
 
 //+------------------------------------------------------------------+
-//| Global Variables                                                 |
+//| Memory Pool for Efficient Array Management                      |
+//+------------------------------------------------------------------+
+template<typename T>
+class CMemoryPool
+{
+private:
+   T m_pool[];
+   bool m_used[];
+   int m_size;
+   int m_nextFree;
+   
+public:
+   CMemoryPool(int size = PERFORMANCE_BUFFER_SIZE)
+   {
+      m_size = size;
+      ArrayResize(m_pool, m_size);
+      ArrayResize(m_used, m_size);
+      ArrayInitialize(m_used, false);
+      m_nextFree = 0;
+   }
+   
+   int Allocate()
+   {
+      for(int i = m_nextFree; i < m_size; i++)
+      {
+         if(!m_used[i])
+         {
+            m_used[i] = true;
+            m_nextFree = i + 1;
+            return i;
+         }
+      }
+      
+      // Search from beginning if no free slot found
+      for(int i = 0; i < m_nextFree; i++)
+      {
+         if(!m_used[i])
+         {
+            m_used[i] = true;
+            m_nextFree = i + 1;
+            return i;
+         }
+      }
+      
+      return -1; // Pool full
+   }
+   
+   void Deallocate(int index)
+   {
+      if(index >= 0 && index < m_size)
+      {
+         m_used[index] = false;
+         if(index < m_nextFree)
+            m_nextFree = index;
+      }
+   }
+   
+   T* Get(int index)
+   {
+      if(index >= 0 && index < m_size && m_used[index])
+         return &m_pool[index];
+      return NULL;
+   }
+   
+   void Clear()
+   {
+      ArrayInitialize(m_used, false);
+      m_nextFree = 0;
+   }
+};
+
+//+------------------------------------------------------------------+
+//| Global Variables with Performance Optimization                  |
 //+------------------------------------------------------------------+
 CTrade         trade;
 CSymbolInfo    symbolInfo;
 CPositionInfo  positionInfo;
 COrderInfo     orderInfo;
 
-PositionTracker g_positionTrackers[];
+// Optimized position tracking with memory pool
+CMemoryPool<PositionTracker> g_positionPool;
+int g_activePositions[];
+int g_positionCount = 0;
+
+// Enhanced analytics structures
 TradeStats g_tradeStats;
+MarketConditions g_marketConditions;
+PerformanceMetrics g_performanceMetrics;
+
+// Caching variables for performance
+static double g_cachedPrice = 0;
+static datetime g_lastPriceUpdate = 0;
+static double g_cachedSpread = 0;
+static datetime g_lastSpreadUpdate = 0;
+static datetime g_lastMemoryCleanup = 0;
+
 EA_STATE g_eaState = ST_READY;
 datetime g_lastStateChange = 0;
 datetime g_freezeUntil = 0;
 datetime g_cooldownUntil = 0;
 
 //+------------------------------------------------------------------+
-//| Global Variable Helper Functions                                 |
+//| Performance-Optimized Utility Functions                         |
 //+------------------------------------------------------------------+
 string GV(const string tag, const ulong mag) 
 { 
@@ -122,6 +273,151 @@ void GlobalVariableDel_(const string symbol)
       if(StringFind(name, prefix) == 0)
          GlobalVariableDel(name);
    }
+}
+
+// Optimized price retrieval with caching
+double GetCachedPrice(bool forceUpdate = false)
+{
+   datetime currentTime = TimeCurrent();
+   if(forceUpdate || currentTime > g_lastPriceUpdate + 1) // Cache for 1 second
+   {
+      g_cachedPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      g_lastPriceUpdate = currentTime;
+   }
+   return g_cachedPrice;
+}
+
+// Optimized spread retrieval with caching
+double GetCachedSpread(bool forceUpdate = false)
+{
+   datetime currentTime = TimeCurrent();
+   if(forceUpdate || currentTime > g_lastSpreadUpdate + 5) // Cache for 5 seconds
+   {
+      g_cachedSpread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+      g_lastSpreadUpdate = currentTime;
+   }
+   return g_cachedSpread;
+}
+
+// Memory cleanup function
+void PerformMemoryCleanup()
+{
+   datetime currentTime = TimeCurrent();
+   if(currentTime > g_lastMemoryCleanup + MEMORY_CLEANUP_INTERVAL)
+   {
+      // Clean up closed positions
+      for(int i = g_positionCount - 1; i >= 0; i--)
+      {
+         PositionTracker* tracker = g_positionPool.Get(g_activePositions[i]);
+         if(tracker != NULL && !PositionSelectByTicket(tracker.ticket))
+         {
+            g_positionPool.Deallocate(g_activePositions[i]);
+            // Remove from active array
+            for(int j = i; j < g_positionCount - 1; j++)
+            {
+               g_activePositions[j] = g_activePositions[j + 1];
+            }
+            g_positionCount--;
+         }
+      }
+      
+      g_lastMemoryCleanup = currentTime;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced Market Analysis Functions                               |
+//+------------------------------------------------------------------+
+void UpdateMarketConditions()
+{
+   double atr = iATR(_Symbol, PERIOD_M15, 14);
+   double currentAtr[];
+   if(CopyBuffer(atr, 0, 0, 1, currentAtr) > 0)
+   {
+      g_marketConditions.volatility = currentAtr[0];
+   }
+   
+   // Calculate trend strength using price momentum
+   double price = GetCachedPrice();
+   double priceChange = price - g_cachedPrice;
+   g_marketConditions.momentum = priceChange / _Point;
+   
+   // Update spread cost
+   g_marketConditions.spreadCost = GetCachedSpread() * _Point;
+   
+   // Determine market state based on volatility and momentum
+   if(g_marketConditions.volatility > 0)
+   {
+      double avgVolatility = g_marketConditions.volatility * 1.5; // Threshold multiplier
+      
+      if(MathAbs(g_marketConditions.momentum) > avgVolatility)
+      {
+         g_marketConditions.state = MARKET_TRENDING;
+         g_marketConditions.trendStrength = MathAbs(g_marketConditions.momentum) / avgVolatility;
+      }
+      else if(g_marketConditions.volatility > avgVolatility * 0.8)
+      {
+         g_marketConditions.state = MARKET_VOLATILE;
+         g_marketConditions.trendStrength = 0.5;
+      }
+      else if(g_marketConditions.volatility < avgVolatility * 0.3)
+      {
+         g_marketConditions.state = MARKET_QUIET;
+         g_marketConditions.trendStrength = 0.1;
+      }
+      else
+      {
+         g_marketConditions.state = MARKET_RANGING;
+         g_marketConditions.trendStrength = 0.3;
+      }
+   }
+   
+   g_marketConditions.lastUpdate = TimeCurrent();
+   
+   IndicatorRelease(atr);
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced Performance Metrics Calculation                        |
+//+------------------------------------------------------------------+
+void CalculatePerformanceMetrics()
+{
+   if(g_performanceMetrics.startTime == 0)
+      g_performanceMetrics.startTime = TimeCurrent();
+   
+   double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double initialBalance = AccountInfoDouble(ACCOUNT_BALANCE) - g_tradeStats.totalProfit;
+   
+   if(initialBalance > 0)
+   {
+      g_performanceMetrics.totalReturn = (g_tradeStats.totalProfit / initialBalance) * 100.0;
+      
+      // Calculate annualized return
+      datetime currentTime = TimeCurrent();
+      double daysPassed = (currentTime - g_performanceMetrics.startTime) / 86400.0;
+      if(daysPassed > 0)
+      {
+         g_performanceMetrics.annualizedReturn = (g_performanceMetrics.totalReturn / daysPassed) * 365.0;
+         g_performanceMetrics.tradesPerDay = g_tradeStats.totalTrades / daysPassed;
+      }
+   }
+   
+   // Calculate advanced ratios
+   if(g_tradeStats.maxDrawdown > 0)
+   {
+      g_performanceMetrics.maxDrawdownPercent = (g_tradeStats.maxDrawdown / initialBalance) * 100.0;
+      g_performanceMetrics.recoveryFactor = g_performanceMetrics.totalReturn / g_performanceMetrics.maxDrawdownPercent;
+      
+      if(g_performanceMetrics.maxDrawdownPercent > 0)
+         g_performanceMetrics.calmarRatio = g_performanceMetrics.annualizedReturn / g_performanceMetrics.maxDrawdownPercent;
+   }
+   
+   // Calculate profit factor
+   double grossProfit = g_tradeStats.avgWinAmount * g_tradeStats.winTrades;
+   double grossLoss = MathAbs(g_tradeStats.avgLossAmount * g_tradeStats.loseTrades);
+   
+   if(grossLoss > 0)
+      g_tradeStats.profitFactor = grossProfit / grossLoss;
 }
 
 //+------------------------------------------------------------------+
@@ -173,13 +469,14 @@ bool IsEAReadyToTrade()
 }
 
 //+------------------------------------------------------------------+
-//| Position Tracking Functions                                      |
+//| Enhanced Position Tracking Functions                            |
 //+------------------------------------------------------------------+
 int FindPositionTrackerIndex(ulong ticket)
 {
-   for(int i = 0; i < ArraySize(g_positionTrackers); i++)
+   for(int i = 0; i < g_positionCount; i++)
    {
-      if(g_positionTrackers[i].ticket == ticket)
+      PositionTracker* tracker = g_positionPool.Get(g_activePositions[i]);
+      if(tracker != NULL && tracker.ticket == ticket)
          return i;
    }
    return -1;
@@ -187,18 +484,33 @@ int FindPositionTrackerIndex(ulong ticket)
 
 void AddPositionTracker(ulong ticket, double entryPrice, double sl, double tp)
 {
-   int size = ArraySize(g_positionTrackers);
-   ArrayResize(g_positionTrackers, size + 1);
-   
-   g_positionTrackers[size].ticket = ticket;
-   g_positionTrackers[size].entryTime = TimeCurrent();
-   g_positionTrackers[size].entryPrice = entryPrice;
-   g_positionTrackers[size].originalSL = sl;
-   g_positionTrackers[size].originalTP = tp;
-   g_positionTrackers[size].slModifications = 0;
-   g_positionTrackers[size].tpModifications = 0;
-   g_positionTrackers[size].breakEvenExecuted = false;
-   g_positionTrackers[size].lastTickTime = GetTickCount();
+   int poolIndex = g_positionPool.Allocate();
+   if(poolIndex >= 0)
+   {
+      PositionTracker* tracker = g_positionPool.Get(poolIndex);
+      if(tracker != NULL)
+      {
+         tracker.ticket = ticket;
+         tracker.entryTime = TimeCurrent();
+         tracker.entryPrice = entryPrice;
+         tracker.originalSL = sl;
+         tracker.originalTP = tp;
+         tracker.slModifications = 0;
+         tracker.tpModifications = 0;
+         tracker.breakEvenExecuted = false;
+         tracker.lastTickTime = GetTickCount();
+         tracker.maxProfit = 0;
+         tracker.maxDrawdown = 0;
+         tracker.runningPnL = 0;
+         
+         // Add to active positions array
+         if(g_positionCount < MAX_CACHED_POSITIONS)
+         {
+            g_activePositions[g_positionCount] = poolIndex;
+            g_positionCount++;
+         }
+      }
+   }
 }
 
 void RemovePositionTracker(ulong ticket)
@@ -206,17 +518,90 @@ void RemovePositionTracker(ulong ticket)
    int index = FindPositionTrackerIndex(ticket);
    if(index >= 0)
    {
-      int size = ArraySize(g_positionTrackers);
-      for(int i = index; i < size - 1; i++)
+      // Update trade statistics before removing
+      PositionTracker* tracker = g_positionPool.Get(g_activePositions[index]);
+      if(tracker != NULL)
       {
-         g_positionTrackers[i] = g_positionTrackers[i + 1];
+         UpdateTradeStats(tracker.runningPnL);
       }
-      ArrayResize(g_positionTrackers, size - 1);
+      
+      g_positionPool.Deallocate(g_activePositions[index]);
+      
+      // Remove from active array
+      for(int i = index; i < g_positionCount - 1; i++)
+      {
+         g_activePositions[i] = g_activePositions[i + 1];
+      }
+      g_positionCount--;
+   }
+}
+
+void UpdatePositionMetrics(ulong ticket)
+{
+   int index = FindPositionTrackerIndex(ticket);
+   if(index >= 0)
+   {
+      PositionTracker* tracker = g_positionPool.Get(g_activePositions[index]);
+      if(tracker != NULL && PositionSelectByTicket(ticket))
+      {
+         double currentPnL = PositionGetDouble(POSITION_PROFIT);
+         tracker.runningPnL = currentPnL;
+         
+         if(currentPnL > tracker.maxProfit)
+            tracker.maxProfit = currentPnL;
+         
+         if(currentPnL < 0 && MathAbs(currentPnL) > tracker.maxDrawdown)
+            tracker.maxDrawdown = MathAbs(currentPnL);
+      }
    }
 }
 
 //+------------------------------------------------------------------+
-//| Lot Size Calculation Functions                                   |
+//| Enhanced Trade Statistics                                        |
+//+------------------------------------------------------------------+
+void UpdateTradeStats(double profit)
+{
+   g_tradeStats.totalTrades++;
+   g_tradeStats.totalProfit += profit;
+   g_tradeStats.lastTradeTime = TimeCurrent();
+   
+   if(profit > 0)
+   {
+      g_tradeStats.winTrades++;
+      g_tradeStats.avgWinAmount = ((g_tradeStats.avgWinAmount * (g_tradeStats.winTrades - 1)) + profit) / g_tradeStats.winTrades;
+      
+      if(g_tradeStats.currentStreak >= 0)
+         g_tradeStats.currentStreak++;
+      else
+         g_tradeStats.currentStreak = 1;
+      
+      if(g_tradeStats.currentStreak > g_tradeStats.maxConsecutiveWins)
+         g_tradeStats.maxConsecutiveWins = g_tradeStats.currentStreak;
+   }
+   else
+   {
+      g_tradeStats.loseTrades++;
+      g_tradeStats.avgLossAmount = ((g_tradeStats.avgLossAmount * (g_tradeStats.loseTrades - 1)) + profit) / g_tradeStats.loseTrades;
+      
+      if(g_tradeStats.currentStreak <= 0)
+         g_tradeStats.currentStreak--;
+      else
+         g_tradeStats.currentStreak = -1;
+      
+      if(MathAbs(g_tradeStats.currentStreak) > g_tradeStats.maxConsecutiveLosses)
+         g_tradeStats.maxConsecutiveLosses = MathAbs(g_tradeStats.currentStreak);
+   }
+   
+   // Update maximum drawdown
+   if(g_tradeStats.totalProfit < 0 && MathAbs(g_tradeStats.totalProfit) > g_tradeStats.maxDrawdown)
+      g_tradeStats.maxDrawdown = MathAbs(g_tradeStats.totalProfit);
+   
+   // Recalculate performance metrics
+   CalculatePerformanceMetrics();
+}
+
+//+------------------------------------------------------------------+
+//| Lot Size Calculation Functions (Optimized)                      |
 //+------------------------------------------------------------------+
 double GetLot(double MM, MarginMode MMMode, string symbol)
 {
@@ -240,12 +625,12 @@ double GetLot(double MM, MarginMode MMMode, string symbol)
          
       case LOSSFREEMARGIN:
          margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-         lot = NormalizeDouble(margin * MM / 50000, 2);
+         lot = NormalizeDouble(margin * MM / 100000, 2);
          break;
          
       case LOSSBALANCE:
          margin = AccountInfoDouble(ACCOUNT_BALANCE);
-         lot = NormalizeDouble(margin * MM / 50000, 2);
+         lot = NormalizeDouble(margin * MM / 100000, 2);
          break;
          
       case LOT:
@@ -254,307 +639,25 @@ double GetLot(double MM, MarginMode MMMode, string symbol)
          break;
    }
    
-   // Normalize lot size according to symbol specifications
-   double minLot = symbolInfo.LotsMin();
-   double maxLot = symbolInfo.LotsMax();
-   double lotStep = symbolInfo.LotsStep();
+   // Validate lot size
+   double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   double stepLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
    
-   if(lot < minLot) lot = minLot;
-   if(lot > maxLot) lot = maxLot;
+   if(stepLot > 0)
+   {
+      lot = MathFloor(lot / stepLot) * stepLot;
+   }
    
-   lot = NormalizeDouble(lot / lotStep, 0) * lotStep;
+   lot = MathMax(minLot, MathMin(maxLot, lot));
    
    return lot;
 }
 
 //+------------------------------------------------------------------+
-//| Order Management Functions                                       |
+//| Session Time Management (Optimized)                             |
 //+------------------------------------------------------------------+
-bool BuyPositionOpen(bool signal, string symbol, datetime signalTime, 
-                    double MM, MarginMode MMMode, int deviation, 
-                    int stopLoss, int takeProfit, ulong magicNumber = 0)
-{
-   if(!signal || !IsEAReadyToTrade()) return false;
-   
-   if(!symbolInfo.Name(symbol))
-   {
-      Print("Error: Invalid symbol ", symbol);
-      return false;
-   }
-   
-   double lot = GetLot(MM, MMMode, symbol);
-   if(lot <= 0)
-   {
-      Print("Error: Invalid lot size calculated");
-      return false;
-   }
-   
-   // Ensure we have up-to-date market data
-   symbolInfo.RefreshRates();
-   double price = symbolInfo.Ask();
-   if(price <= 0)
-   {
-      Print("Error: Unable to retrieve valid ask price for ", symbol);
-      return false;
-   }
-
-   double sl = (stopLoss > 0) ? price - stopLoss * symbolInfo.Point() : 0;
-   double tp = (takeProfit > 0) ? price + takeProfit * symbolInfo.Point() : 0;
-   
-   trade.SetExpertMagicNumber(magicNumber);
-   trade.SetDeviationInPoints(deviation);
-   
-   if(trade.Buy(lot, symbol, price, sl, tp, "ST_VWAP Buy"))
-   {
-      ulong ticket = trade.ResultOrder();
-      AddPositionTracker(ticket, price, sl, tp);
-      SetEAState(ST_IN_TRADE);
-      
-      g_tradeStats.totalTrades++;
-      g_tradeStats.lastTradeTime = TimeCurrent();
-      
-      Print("BUY position opened: Ticket=", ticket, ", Lot=", lot, ", Price=", price);
-      return true;
-   }
-   else
-   {
-      Print("Error opening BUY position: ", trade.ResultRetcode(), " - ", trade.ResultRetcodeDescription());
-      return false;
-   }
-}
-
-bool SellPositionOpen(bool signal, string symbol, datetime signalTime,
-                     double MM, MarginMode MMMode, int deviation,
-                     int stopLoss, int takeProfit, ulong magicNumber = 0)
-{
-   if(!signal || !IsEAReadyToTrade()) return false;
-   
-   if(!symbolInfo.Name(symbol))
-   {
-      Print("Error: Invalid symbol ", symbol);
-      return false;
-   }
-   
-   double lot = GetLot(MM, MMMode, symbol);
-   if(lot <= 0)
-   {
-      Print("Error: Invalid lot size calculated");
-      return false;
-   }
-   
-   symbolInfo.RefreshRates();
-   double price = symbolInfo.Bid();
-   if(price <= 0)
-   {
-      Print("Error: Unable to retrieve valid bid price for ", symbol);
-      return false;
-   }
-
-   double sl = (stopLoss > 0) ? price + stopLoss * symbolInfo.Point() : 0;
-   double tp = (takeProfit > 0) ? price - takeProfit * symbolInfo.Point() : 0;
-   
-   trade.SetExpertMagicNumber(magicNumber);
-   trade.SetDeviationInPoints(deviation);
-   
-   if(trade.Sell(lot, symbol, price, sl, tp, "ST_VWAP Sell"))
-   {
-      ulong ticket = trade.ResultOrder();
-      AddPositionTracker(ticket, price, sl, tp);
-      SetEAState(ST_IN_TRADE);
-      
-      g_tradeStats.totalTrades++;
-      g_tradeStats.lastTradeTime = TimeCurrent();
-      
-      Print("SELL position opened: Ticket=", ticket, ", Lot=", lot, ", Price=", price);
-      return true;
-   }
-   else
-   {
-      Print("Error opening SELL position: ", trade.ResultRetcode(), " - ", trade.ResultRetcodeDescription());
-      return false;
-   }
-}
-
-bool BuyPositionClose(bool signal, string symbol, int deviation, ulong magicNumber = 0)
-{
-   if(!signal) return false;
-   
-   trade.SetExpertMagicNumber(magicNumber);
-   trade.SetDeviationInPoints(deviation);
-   
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
-   {
-      if(positionInfo.SelectByIndex(i))
-      {
-         if(positionInfo.Symbol() == symbol && 
-            positionInfo.PositionType() == POSITION_TYPE_BUY &&
-            (magicNumber == 0 || positionInfo.Magic() == magicNumber))
-         {
-            ulong ticket = positionInfo.Ticket();
-            if(trade.PositionClose(ticket))
-            {
-               RemovePositionTracker(ticket);
-               UpdateTradeStats(positionInfo.Profit());
-               SetEAState(ST_COOLDOWN);
-               
-               Print("BUY position closed: Ticket=", ticket, ", Profit=", positionInfo.Profit());
-               return true;
-            }
-         }
-      }
-   }
-   return false;
-}
-
-bool SellPositionClose(bool signal, string symbol, int deviation, ulong magicNumber = 0)
-{
-   if(!signal) return false;
-   
-   trade.SetExpertMagicNumber(magicNumber);
-   trade.SetDeviationInPoints(deviation);
-   
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
-   {
-      if(positionInfo.SelectByIndex(i))
-      {
-         if(positionInfo.Symbol() == symbol && 
-            positionInfo.PositionType() == POSITION_TYPE_SELL &&
-            (magicNumber == 0 || positionInfo.Magic() == magicNumber))
-         {
-            ulong ticket = positionInfo.Ticket();
-            if(trade.PositionClose(ticket))
-            {
-               RemovePositionTracker(ticket);
-               UpdateTradeStats(positionInfo.Profit());
-               SetEAState(ST_COOLDOWN);
-               
-               Print("SELL position closed: Ticket=", ticket, ", Profit=", positionInfo.Profit());
-               return true;
-            }
-         }
-      }
-   }
-   return false;
-}
-
-//+------------------------------------------------------------------+
-//| Advanced Position Management Functions                           |
-//+------------------------------------------------------------------+
-void UpdateTradeStats(double profit)
-{
-   g_tradeStats.totalProfit += profit;
-   
-   if(profit > 0)
-      g_tradeStats.winTrades++;
-   else if(profit < 0)
-      g_tradeStats.loseTrades++;
-      
-   // Update max drawdown
-   if(profit < 0 && MathAbs(profit) > g_tradeStats.maxDrawdown)
-      g_tradeStats.maxDrawdown = MathAbs(profit);
-}
-
-bool ModifyPosition(ulong ticket, double newSL, double newTP, int maxSLMods = -1, int maxTPMods = -1)
-{
-   if(!positionInfo.SelectByTicket(ticket))
-      return false;
-      
-   int trackerIndex = FindPositionTrackerIndex(ticket);
-   if(trackerIndex < 0)
-      return false;
-      
-   // Check modification limits
-   if(maxSLMods > 0 && g_positionTrackers[trackerIndex].slModifications >= maxSLMods)
-   {
-      Print("SL modification limit reached for ticket ", ticket);
-      return false;
-   }
-   
-   if(maxTPMods > 0 && g_positionTrackers[trackerIndex].tpModifications >= maxTPMods)
-   {
-      Print("TP modification limit reached for ticket ", ticket);
-      return false;
-   }
-   
-   // Check minimum interval between modifications
-   ulong currentTick = GetTickCount();
-   if(currentTick - g_positionTrackers[trackerIndex].lastTickTime < 1000) // 1 second minimum
-      return false;
-   
-   if(trade.PositionModify(ticket, newSL, newTP))
-   {
-      // Update modification counters
-      double currentSL = positionInfo.StopLoss();
-      double currentTP = positionInfo.TakeProfit();
-      
-      if(MathAbs(newSL - currentSL) > symbolInfo.Point())
-         g_positionTrackers[trackerIndex].slModifications++;
-         
-      if(MathAbs(newTP - currentTP) > symbolInfo.Point())
-         g_positionTrackers[trackerIndex].tpModifications++;
-         
-      g_positionTrackers[trackerIndex].lastTickTime = currentTick;
-      
-      Print("Position modified: Ticket=", ticket, ", New SL=", newSL, ", New TP=", newTP);
-      return true;
-   }
-   
-   return false;
-}
-
-//+------------------------------------------------------------------+
-//| Break-Even and Trailing Functions                               |
-//+------------------------------------------------------------------+
-void ProcessBreakEven(double breakEvenPercent, double beSLPercent)
-{
-   for(int i = 0; i < ArraySize(g_positionTrackers); i++)
-   {
-      ulong ticket = g_positionTrackers[i].ticket;
-      
-      if(g_positionTrackers[i].breakEvenExecuted)
-         continue;
-         
-      if(!positionInfo.SelectByTicket(ticket))
-         continue;
-         
-      double entryPrice = g_positionTrackers[i].entryPrice;
-      double originalTP = g_positionTrackers[i].originalTP;
-      double currentPrice = (positionInfo.PositionType() == POSITION_TYPE_BUY) ? 
-                           symbolInfo.Bid() : symbolInfo.Ask();
-      
-      // Calculate profit percentage
-      double tpDistance = MathAbs(originalTP - entryPrice);
-      double currentProfit = 0;
-      
-      if(positionInfo.PositionType() == POSITION_TYPE_BUY)
-         currentProfit = currentPrice - entryPrice;
-      else
-         currentProfit = entryPrice - currentPrice;
-         
-      double profitPercent = (tpDistance > 0) ? (currentProfit / tpDistance) * 100 : 0;
-      
-      if(profitPercent >= breakEvenPercent)
-      {
-         // Offset stop loss from entry based on TP distance rather than current profit
-         double offset = tpDistance * beSLPercent / 100.0;
-         double newSL = entryPrice + offset;
-
-         if(positionInfo.PositionType() == POSITION_TYPE_SELL)
-            newSL = entryPrice - offset;
-
-         if(ModifyPosition(ticket, newSL, positionInfo.TakeProfit()))
-         {
-            g_positionTrackers[i].breakEvenExecuted = true;
-            Print("Break-even executed for ticket ", ticket, ", New SL: ", newSL);
-         }
-      }
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Session Management Functions                                     |
-//+------------------------------------------------------------------+
-bool IsInSession(SessionTime &session, datetime time)
+bool IsInSession(const SessionTime &session, datetime time)
 {
    if(!session.enabled)
       return false;
@@ -563,71 +666,275 @@ bool IsInSession(SessionTime &session, datetime time)
    TimeToStruct(time, timeStruct);
    
    int currentMinutes = timeStruct.hour * 60 + timeStruct.min;
-   int startMinutes = session.startHour * 60 + session.startMinute;
-   int endMinutes = session.endHour * 60 + session.endMinute;
+   int sessionStart = session.startHour * 60 + session.startMinute;
+   int sessionEnd = session.endHour * 60 + session.endMinute;
    
-   if(startMinutes <= endMinutes)
+   if(sessionStart <= sessionEnd)
    {
-      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+      return (currentMinutes >= sessionStart && currentMinutes <= sessionEnd);
    }
    else // Overnight session
    {
-      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+      return (currentMinutes >= sessionStart || currentMinutes <= sessionEnd);
    }
 }
 
-bool IsInAnySession(SessionTime &sessions[], datetime time)
+//+------------------------------------------------------------------+
+//| Enhanced Position Management Functions                           |
+//+------------------------------------------------------------------+
+bool BuyPositionOpen(bool Signal, const string Symb, datetime SignalTime, 
+                     double MM, MarginMode MMMode, int Deviation, 
+                     int StopLoss, int TakeProfit, ulong MagicNumber = 0)
 {
-   for(int i = 0; i < ArraySize(sessions); i++)
+   if(!Signal) return false;
+   
+   double lot = GetLot(MM, MMMode, Symb);
+   if(lot <= 0) return false;
+   
+   double price = SymbolInfoDouble(Symb, SYMBOL_ASK);
+   if(price <= 0) return false;
+   
+   double sl = (StopLoss > 0) ? price - StopLoss * SymbolInfoDouble(Symb, SYMBOL_POINT) : 0;
+   double tp = (TakeProfit > 0) ? price + TakeProfit * SymbolInfoDouble(Symb, SYMBOL_POINT) : 0;
+   
+   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetDeviationInPoints(Deviation);
+   
+   bool result = trade.Buy(lot, Symb, price, sl, tp);
+   
+   if(result)
    {
-      if(IsInSession(sessions[i], time))
-         return true;
+      ulong ticket = trade.ResultOrder();
+      AddPositionTracker(ticket, price, sl, tp);
+      
+      Print("BUY position opened: Ticket=", ticket, " Lot=", lot, " Price=", price);
    }
+   else
+   {
+      Print("BUY position failed: ", trade.ResultComment());
+   }
+   
+   return result;
+}
+
+bool SellPositionOpen(bool Signal, const string Symb, datetime SignalTime, 
+                      double MM, MarginMode MMMode, int Deviation, 
+                      int StopLoss, int TakeProfit, ulong MagicNumber = 0)
+{
+   if(!Signal) return false;
+   
+   double lot = GetLot(MM, MMMode, Symb);
+   if(lot <= 0) return false;
+   
+   double price = SymbolInfoDouble(Symb, SYMBOL_BID);
+   if(price <= 0) return false;
+   
+   double sl = (StopLoss > 0) ? price + StopLoss * SymbolInfoDouble(Symb, SYMBOL_POINT) : 0;
+   double tp = (TakeProfit > 0) ? price - TakeProfit * SymbolInfoDouble(Symb, SYMBOL_POINT) : 0;
+   
+   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetDeviationInPoints(Deviation);
+   
+   bool result = trade.Sell(lot, Symb, price, sl, tp);
+   
+   if(result)
+   {
+      ulong ticket = trade.ResultOrder();
+      AddPositionTracker(ticket, price, sl, tp);
+      
+      Print("SELL position opened: Ticket=", ticket, " Lot=", lot, " Price=", price);
+   }
+   else
+   {
+      Print("SELL position failed: ", trade.ResultComment());
+   }
+   
+   return result;
+}
+
+bool BuyPositionClose(bool Signal, const string Symb, int Deviation, ulong MagicNumber = 0)
+{
+   if(!Signal) return false;
+   
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      if(positionInfo.SelectByIndex(i))
+      {
+         if(positionInfo.Symbol() == Symb && 
+            positionInfo.Magic() == MagicNumber &&
+            positionInfo.PositionType() == POSITION_TYPE_BUY)
+         {
+            trade.SetExpertMagicNumber(MagicNumber);
+            trade.SetDeviationInPoints(Deviation);
+            
+            bool result = trade.PositionClose(positionInfo.Ticket());
+            
+            if(result)
+            {
+               RemovePositionTracker(positionInfo.Ticket());
+               Print("BUY position closed: Ticket=", positionInfo.Ticket());
+            }
+            
+            return result;
+         }
+      }
+   }
+   
+   return false;
+}
+
+bool SellPositionClose(bool Signal, const string Symb, int Deviation, ulong MagicNumber = 0)
+{
+   if(!Signal) return false;
+   
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      if(positionInfo.SelectByIndex(i))
+      {
+         if(positionInfo.Symbol() == Symb && 
+            positionInfo.Magic() == MagicNumber &&
+            positionInfo.PositionType() == POSITION_TYPE_SELL)
+         {
+            trade.SetExpertMagicNumber(MagicNumber);
+            trade.SetDeviationInPoints(Deviation);
+            
+            bool result = trade.PositionClose(positionInfo.Ticket());
+            
+            if(result)
+            {
+               RemovePositionTracker(positionInfo.Ticket());
+               Print("SELL position closed: Ticket=", positionInfo.Ticket());
+            }
+            
+            return result;
+         }
+      }
+   }
+   
    return false;
 }
 
 //+------------------------------------------------------------------+
-//| Utility Functions                                               |
+//| Enhanced Break-Even Processing                                   |
 //+------------------------------------------------------------------+
-void LoadHistory(datetime startTime, string symbol, ENUM_TIMEFRAMES timeframe)
+void ProcessBreakEven(double profitPercent, double offsetPercent)
 {
-   int bars = iBars(symbol, timeframe);
-   datetime time[];
-   
-   if(CopyTime(symbol, timeframe, startTime, TimeCurrent(), time) > 0)
+   for(int i = 0; i < g_positionCount; i++)
    {
-      Print("History loaded successfully for ", symbol, " ", EnumToString(timeframe));
+      PositionTracker* tracker = g_positionPool.Get(g_activePositions[i]);
+      if(tracker == NULL || tracker.breakEvenExecuted) continue;
+      
+      if(!PositionSelectByTicket(tracker.ticket)) continue;
+      
+      double currentPrice = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ?
+                           SymbolInfoDouble(_Symbol, SYMBOL_BID) :
+                           SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      
+      double entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double takeProfit = PositionGetDouble(POSITION_TP);
+      
+      if(takeProfit <= 0) continue;
+      
+      bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      double profitDistance = isBuy ? (takeProfit - entryPrice) : (entryPrice - takeProfit);
+      double currentProfit = isBuy ? (currentPrice - entryPrice) : (entryPrice - currentPrice);
+      
+      if(profitDistance > 0 && (currentProfit / profitDistance) >= (profitPercent / 100.0))
+      {
+         double newSL = entryPrice + (isBuy ? 1 : -1) * (offsetPercent / 100.0) * profitDistance;
+         
+         trade.PositionModify(tracker.ticket, newSL, takeProfit);
+         tracker.breakEvenExecuted = true;
+         
+         Print("Break-even executed for ticket: ", tracker.ticket, " New SL: ", newSL);
+      }
+      
+      // Update position metrics
+      UpdatePositionMetrics(tracker.ticket);
    }
 }
 
-class CIsNewBar
+//+------------------------------------------------------------------+
+//| Performance Monitoring and Cleanup                              |
+//+------------------------------------------------------------------+
+void PerformanceUpdate()
 {
-private:
-   datetime m_lastBarTime;
-   string   m_symbol;
-   ENUM_TIMEFRAMES m_timeframe;
+   // Update market conditions
+   UpdateMarketConditions();
    
-public:
-   CIsNewBar() : m_lastBarTime(0) {}
-   
-   bool IsNewBar(string symbol, ENUM_TIMEFRAMES timeframe)
+   // Update position metrics for all active positions
+   for(int i = 0; i < g_positionCount; i++)
    {
-      datetime currentBarTime = iTime(symbol, timeframe, 0);
-      
-      if(m_symbol != symbol || m_timeframe != timeframe)
+      PositionTracker* tracker = g_positionPool.Get(g_activePositions[i]);
+      if(tracker != NULL)
       {
-         m_symbol = symbol;
-         m_timeframe = timeframe;
-         m_lastBarTime = currentBarTime;
-         return false;
+         UpdatePositionMetrics(tracker.ticket);
       }
-      
-      if(currentBarTime != m_lastBarTime)
-      {
-         m_lastBarTime = currentBarTime;
-         return true;
-      }
-      
-      return false;
    }
-};
+   
+   // Perform memory cleanup if needed
+   PerformMemoryCleanup();
+   
+   // Calculate performance metrics
+   CalculatePerformanceMetrics();
+}
+
+//+------------------------------------------------------------------+
+//| Initialization and Cleanup Functions                            |
+//+------------------------------------------------------------------+
+void InitializeEnhancedAlgorithms()
+{
+   // Initialize memory pools
+   ArrayResize(g_activePositions, MAX_CACHED_POSITIONS);
+   g_positionCount = 0;
+   
+   // Initialize performance metrics
+   g_performanceMetrics.startTime = TimeCurrent();
+   
+   // Cache initial values
+   GetCachedPrice(true);
+   GetCachedSpread(true);
+   
+   Print("Enhanced Trade Algorithms initialized successfully");
+}
+
+void CleanupEnhancedAlgorithms()
+{
+   // Clear memory pools
+   g_positionPool.Clear();
+   g_positionCount = 0;
+   
+   // Clean up global variables
+   GlobalVariableDel_(_Symbol);
+   
+   Print("Enhanced Trade Algorithms cleaned up");
+}
+
+//+------------------------------------------------------------------+
+//| Advanced Analytics Export Functions                              |
+//+------------------------------------------------------------------+
+string GetPerformanceReport()
+{
+   string report = "=== ENHANCED PERFORMANCE REPORT ===\n";
+   report += StringFormat("Total Trades: %d\n", g_tradeStats.totalTrades);
+   report += StringFormat("Win Rate: %.1f%%\n", g_tradeStats.totalTrades > 0 ? (double)g_tradeStats.winTrades / g_tradeStats.totalTrades * 100 : 0);
+   report += StringFormat("Profit Factor: %.2f\n", g_tradeStats.profitFactor);
+   report += StringFormat("Total Return: %.2f%%\n", g_performanceMetrics.totalReturn);
+   report += StringFormat("Annualized Return: %.2f%%\n", g_performanceMetrics.annualizedReturn);
+   report += StringFormat("Max Drawdown: %.2f%%\n", g_performanceMetrics.maxDrawdownPercent);
+   report += StringFormat("Calmar Ratio: %.2f\n", g_performanceMetrics.calmarRatio);
+   report += StringFormat("Recovery Factor: %.2f\n", g_performanceMetrics.recoveryFactor);
+   report += StringFormat("Avg Win: %.2f\n", g_tradeStats.avgWinAmount);
+   report += StringFormat("Avg Loss: %.2f\n", g_tradeStats.avgLossAmount);
+   report += StringFormat("Max Consecutive Wins: %.0f\n", g_tradeStats.maxConsecutiveWins);
+   report += StringFormat("Max Consecutive Losses: %.0f\n", g_tradeStats.maxConsecutiveLosses);
+   report += StringFormat("Current Streak: %.0f\n", g_tradeStats.currentStreak);
+   report += StringFormat("Market State: %s\n", EnumToString(g_marketConditions.state));
+   report += StringFormat("Trend Strength: %.2f\n", g_marketConditions.trendStrength);
+   report += StringFormat("Volatility: %.5f\n", g_marketConditions.volatility);
+   report += "=== END REPORT ===\n";
+   
+   return report;
+}
+
+//+------------------------------------------------------------------+
