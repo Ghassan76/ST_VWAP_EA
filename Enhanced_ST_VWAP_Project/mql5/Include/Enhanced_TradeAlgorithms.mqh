@@ -97,10 +97,11 @@ enum FREEZE_REASON
 enum MARKET_STATE
 {
    MARKET_UNKNOWN = 0,
-   MARKET_TRENDING,
-   MARKET_RANGING,
-   MARKET_VOLATILE,
-   MARKET_QUIET
+   MARKET_TRENDING_UP = 1,
+   MARKET_TRENDING_DOWN = -1,
+   MARKET_RANGING = 2,
+   MARKET_VOLATILE = 3,
+   MARKET_QUIET = 4
 };
 
 //+------------------------------------------------------------------+
@@ -187,12 +188,25 @@ struct TradeStats
    double maxConsecutiveWins;
    double maxConsecutiveLosses;
    double currentStreak;      // Current win/loss streak
+   double winRate;            // Win rate percentage
    
-   TradeStats() : totalTrades(0), winTrades(0), loseTrades(0), 
-                 totalProfit(0), maxDrawdown(0), lastTradeTime(0),
-                 avgWinAmount(0), avgLossAmount(0), profitFactor(0),
-                 sharpeRatio(0), maxConsecutiveWins(0), maxConsecutiveLosses(0),
-                 currentStreak(0) {}
+   void Init()
+   {
+      totalTrades = 0;
+      winTrades = 0;
+      loseTrades = 0;
+      totalProfit = 0;
+      maxDrawdown = 0;
+      lastTradeTime = 0;
+      avgWinAmount = 0;
+      avgLossAmount = 0;
+      profitFactor = 0;
+      sharpeRatio = 0;
+      maxConsecutiveWins = 0;
+      maxConsecutiveLosses = 0;
+      currentStreak = 0;
+      winRate = 0;
+   }
 };
 
 struct MarketConditions
@@ -205,8 +219,16 @@ struct MarketConditions
    datetime lastUpdate;       // Last update time
    double momentum;           // Price momentum indicator
    
-   MarketConditions() : volatility(0), trendStrength(0), state(MARKET_UNKNOWN),
-                       spreadCost(0), liquidity(0), lastUpdate(0), momentum(0) {}
+   void Init()
+   {
+      volatility = 0;
+      trendStrength = 0;
+      state = MARKET_UNKNOWN;
+      spreadCost = 0;
+      liquidity = 0;
+      lastUpdate = 0;
+      momentum = 0;
+   }
 };
 
 struct PerformanceMetrics
@@ -222,9 +244,19 @@ struct PerformanceMetrics
    double avgHoldingTime;     // Average holding time in hours
    datetime startTime;        // Strategy start time
    
-   PerformanceMetrics() : totalReturn(0), annualizedReturn(0), volatilityIndex(0),
-                         maxDrawdownPercent(0), recoveryFactor(0), calmarRatio(0),
-                         sortinoRatio(0), tradesPerDay(0), avgHoldingTime(0), startTime(0) {}
+   void Init()
+   {
+      totalReturn = 0;
+      annualizedReturn = 0;
+      volatilityIndex = 0;
+      maxDrawdownPercent = 0;
+      recoveryFactor = 0;
+      calmarRatio = 0;
+      sortinoRatio = 0;
+      tradesPerDay = 0;
+      avgHoldingTime = 0;
+      startTime = 0;
+   }
 };
 
 //+------------------------------------------------------------------+
@@ -415,51 +447,47 @@ void PerformMemoryCleanup()
 //+------------------------------------------------------------------+
 void UpdateMarketConditions()
 {
-   double atr = iATR(_Symbol, PERIOD_M15, 14);
-   double currentAtr[];
-   if(CopyBuffer(atr, 0, 0, 1, currentAtr) > 0)
+   datetime currentTime = TimeCurrent();
+   
+   // Basic market condition updates
+   g_marketConditions.lastUpdate = currentTime;
+   
+   // Simple volatility calculation based on spread
+   double currentSpread = GetCachedSpread();
+   double currentPrice = GetCachedPrice();
+   
+   if(currentPrice > 0)
    {
-      g_marketConditions.volatility = currentAtr[0];
+      g_marketConditions.volatility = (currentSpread / currentPrice) * 100.0;
    }
    
-   // Calculate trend strength using price momentum
-   double price = GetCachedPrice();
-   double priceChange = price - g_cachedPrice;
-   g_marketConditions.momentum = priceChange / _Point;
-   
-   // Update spread cost
-   g_marketConditions.spreadCost = GetCachedSpread() * _Point;
-   
-   // Determine market state based on volatility and momentum
-   if(g_marketConditions.volatility > 0)
+   // Simple trend strength based on recent price movement
+   static double lastPrice = 0;
+   if(lastPrice > 0 && currentPrice > 0)
    {
-      double avgVolatility = g_marketConditions.volatility * 1.5; // Threshold multiplier
+      double priceChange = currentPrice - lastPrice;
+      g_marketConditions.trendStrength = (priceChange / lastPrice) * 100.0;
       
-      if(MathAbs(g_marketConditions.momentum) > avgVolatility)
+      // Determine market state
+      if(MathAbs(g_marketConditions.trendStrength) > 0.5)
       {
-         g_marketConditions.state = MARKET_TRENDING;
-         g_marketConditions.trendStrength = MathAbs(g_marketConditions.momentum) / avgVolatility;
+         g_marketConditions.state = (g_marketConditions.trendStrength > 0) ? MARKET_TRENDING_UP : MARKET_TRENDING_DOWN;
       }
-      else if(g_marketConditions.volatility > avgVolatility * 0.8)
+      else if(g_marketConditions.volatility > 2.0)
       {
          g_marketConditions.state = MARKET_VOLATILE;
-         g_marketConditions.trendStrength = 0.5;
       }
-      else if(g_marketConditions.volatility < avgVolatility * 0.3)
+      else if(g_marketConditions.volatility < 0.5)
       {
          g_marketConditions.state = MARKET_QUIET;
-         g_marketConditions.trendStrength = 0.1;
       }
       else
       {
          g_marketConditions.state = MARKET_RANGING;
-         g_marketConditions.trendStrength = 0.3;
       }
    }
    
-   g_marketConditions.lastUpdate = TimeCurrent();
-   
-   IndicatorRelease(atr);
+   lastPrice = currentPrice;
 }
 
 //+------------------------------------------------------------------+
@@ -467,42 +495,94 @@ void UpdateMarketConditions()
 //+------------------------------------------------------------------+
 void CalculatePerformanceMetrics()
 {
-   if(g_performanceMetrics.startTime == 0)
-      g_performanceMetrics.startTime = TimeCurrent();
+   // Calculate advanced performance metrics
+   if(g_tradeStats.totalTrades > 0)
+   {
+      // Calculate win rate
+      g_tradeStats.winRate = ((double)g_tradeStats.winTrades / g_tradeStats.totalTrades) * 100.0;
+      
+      // Calculate profit factor
+      if(g_tradeStats.avgLossAmount < 0)
+      {
+         double grossProfit = g_tradeStats.avgWinAmount * g_tradeStats.winTrades;
+         double grossLoss = MathAbs(g_tradeStats.avgLossAmount * g_tradeStats.loseTrades);
+         
+         if(grossLoss > 0)
+            g_tradeStats.profitFactor = grossProfit / grossLoss;
+      }
+   }
    
+   // Calculate return metrics
    double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
    double initialBalance = AccountInfoDouble(ACCOUNT_BALANCE) - g_tradeStats.totalProfit;
    
-   if(initialBalance > 0)
+   if(initialBalance > 0 && g_tradeStats.totalProfit != 0)
    {
       g_performanceMetrics.totalReturn = (g_tradeStats.totalProfit / initialBalance) * 100.0;
       
       // Calculate annualized return
       datetime currentTime = TimeCurrent();
       double daysPassed = (currentTime - g_performanceMetrics.startTime) / 86400.0;
+      
       if(daysPassed > 0)
       {
          g_performanceMetrics.annualizedReturn = (g_performanceMetrics.totalReturn / daysPassed) * 365.0;
-         g_performanceMetrics.tradesPerDay = g_tradeStats.totalTrades / daysPassed;
       }
    }
    
-   // Calculate advanced ratios
-   if(g_tradeStats.maxDrawdown > 0)
+   // Update max drawdown
+   if(g_tradeStats.maxDrawdown > 0 && initialBalance > 0)
    {
       g_performanceMetrics.maxDrawdownPercent = (g_tradeStats.maxDrawdown / initialBalance) * 100.0;
-      g_performanceMetrics.recoveryFactor = g_performanceMetrics.totalReturn / g_performanceMetrics.maxDrawdownPercent;
       
       if(g_performanceMetrics.maxDrawdownPercent > 0)
+      {
+         g_performanceMetrics.recoveryFactor = g_performanceMetrics.totalReturn / g_performanceMetrics.maxDrawdownPercent;
          g_performanceMetrics.calmarRatio = g_performanceMetrics.annualizedReturn / g_performanceMetrics.maxDrawdownPercent;
+      }
+   }
+}
+
+void UpdateAnalyticsData()
+{
+   // Update real-time analytics data
+   datetime currentTime = TimeCurrent();
+   double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   
+   // Update performance tracking
+   if(g_performanceMetrics.startTime == 0)
+      g_performanceMetrics.startTime = currentTime;
+   
+   // Calculate time-based metrics
+   double daysPassed = (currentTime - g_performanceMetrics.startTime) / 86400.0;
+   if(daysPassed > 0)
+   {
+      g_performanceMetrics.tradesPerDay = (int)(g_tradeStats.totalTrades / daysPassed);
    }
    
-   // Calculate profit factor
-   double grossProfit = g_tradeStats.avgWinAmount * g_tradeStats.winTrades;
-   double grossLoss = MathAbs(g_tradeStats.avgLossAmount * g_tradeStats.loseTrades);
+   Print("Analytics data updated - Equity: ", DoubleToString(currentEquity, 2));
+}
+
+void LoadHistory(datetime time, string symbol, ENUM_TIMEFRAMES timeframe)
+{
+   // Improved history loading with error checking
+   datetime serverTime = TimeCurrent();
+   datetime fromTime = time > 0 ? time : serverTime - PeriodSeconds(timeframe) * 1000;
    
-   if(grossLoss > 0)
-      g_tradeStats.profitFactor = grossProfit / grossLoss;
+   int bars = Bars(symbol, timeframe, fromTime, serverTime);
+   if(bars < 100) // Ensure minimum history
+   {
+      int attempts = 0;
+      while(bars < 100 && attempts < 10)
+      {
+         Sleep(100);
+         bars = Bars(symbol, timeframe, fromTime, serverTime);
+         attempts++;
+      }
+      
+      if(bars < 100)
+         Print("WARNING: Limited history available: ", bars, " bars for ", symbol);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -620,6 +700,7 @@ void RemovePositionTracker(ulong ticket)
       g_positionCount--;
    }
 }
+
 void RebuildPositionCache()
 {
    g_positionPool.Clear();
@@ -993,6 +1074,11 @@ void InitializeEnhancedAlgorithms()
    ArrayResize(g_activePositions, MAX_CACHED_POSITIONS);
    g_positionCount = 0;
    
+   // Initialize structures
+   g_tradeStats.Init();
+   g_marketConditions.Init();
+   g_performanceMetrics.Init();
+   
    // Initialize performance metrics
    g_performanceMetrics.startTime = TimeCurrent();
    
@@ -1040,146 +1126,6 @@ string GetPerformanceReport()
    report += "=== END REPORT ===\n";
    
    return report;
-}
-
-//+------------------------------------------------------------------+
-//| Missing Functions Implementation                                 |
-//+------------------------------------------------------------------+
-void UpdateAnalyticsData()
-{
-   // Update real-time analytics data
-   datetime currentTime = TimeCurrent();
-   double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-   
-   // Update performance tracking
-   if(g_performanceMetrics.startTime == 0)
-      g_performanceMetrics.startTime = currentTime;
-   
-   // Calculate time-based metrics
-   double daysPassed = (currentTime - g_performanceMetrics.startTime) / 86400.0;
-   if(daysPassed > 0)
-   {
-      g_performanceMetrics.tradesPerDay = (int)(g_tradeStats.totalTrades / daysPassed);
-   }
-   
-   Print("Analytics data updated - Equity: ", DoubleToString(currentEquity, 2));
-}
-
-void UpdateMarketConditions()
-{
-   datetime currentTime = TimeCurrent();
-   
-   // Basic market condition updates
-   g_marketConditions.lastUpdate = currentTime;
-   
-   // Simple volatility calculation based on spread
-   double currentSpread = GetCachedSpread();
-   double currentPrice = GetCachedPrice();
-   
-   if(currentPrice > 0)
-   {
-      g_marketConditions.volatility = (currentSpread / currentPrice) * 100.0;
-   }
-   
-   // Simple trend strength based on recent price movement
-   static double lastPrice = 0;
-   if(lastPrice > 0 && currentPrice > 0)
-   {
-      double priceChange = currentPrice - lastPrice;
-      g_marketConditions.trendStrength = (priceChange / lastPrice) * 100.0;
-      
-      // Determine market state
-      if(MathAbs(g_marketConditions.trendStrength) > 0.5)
-      {
-         g_marketConditions.state = (g_marketConditions.trendStrength > 0) ? MARKET_TRENDING_UP : MARKET_TRENDING_DOWN;
-      }
-      else if(g_marketConditions.volatility > 2.0)
-      {
-         g_marketConditions.state = MARKET_VOLATILE;
-      }
-      else if(g_marketConditions.volatility < 0.5)
-      {
-         g_marketConditions.state = MARKET_QUIET;
-      }
-      else
-      {
-         g_marketConditions.state = MARKET_RANGING;
-      }
-   }
-   
-   lastPrice = currentPrice;
-}
-
-void CalculatePerformanceMetrics()
-{
-   // Calculate advanced performance metrics
-   if(g_tradeStats.totalTrades > 0)
-   {
-      // Calculate win rate
-      g_tradeStats.winRate = ((double)g_tradeStats.winTrades / g_tradeStats.totalTrades) * 100.0;
-      
-      // Calculate profit factor
-      if(g_tradeStats.avgLossAmount < 0)
-      {
-         double grossProfit = g_tradeStats.avgWinAmount * g_tradeStats.winTrades;
-         double grossLoss = MathAbs(g_tradeStats.avgLossAmount * g_tradeStats.loseTrades);
-         
-         if(grossLoss > 0)
-            g_tradeStats.profitFactor = grossProfit / grossLoss;
-      }
-   }
-   
-   // Calculate return metrics
-   double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-   double initialBalance = AccountInfoDouble(ACCOUNT_BALANCE) - g_tradeStats.totalProfit;
-   
-   if(initialBalance > 0 && g_tradeStats.totalProfit != 0)
-   {
-      g_performanceMetrics.totalReturn = (g_tradeStats.totalProfit / initialBalance) * 100.0;
-      
-      // Calculate annualized return
-      datetime currentTime = TimeCurrent();
-      double daysPassed = (currentTime - g_performanceMetrics.startTime) / 86400.0;
-      
-      if(daysPassed > 0)
-      {
-         g_performanceMetrics.annualizedReturn = (g_performanceMetrics.totalReturn / daysPassed) * 365.0;
-      }
-   }
-   
-   // Update max drawdown
-   if(g_tradeStats.maxDrawdown > 0 && initialBalance > 0)
-   {
-      g_performanceMetrics.maxDrawdownPercent = (g_tradeStats.maxDrawdown / initialBalance) * 100.0;
-      
-      if(g_performanceMetrics.maxDrawdownPercent > 0)
-      {
-         g_performanceMetrics.recoveryFactor = g_performanceMetrics.totalReturn / g_performanceMetrics.maxDrawdownPercent;
-         g_performanceMetrics.calmarRatio = g_performanceMetrics.annualizedReturn / g_performanceMetrics.maxDrawdownPercent;
-      }
-   }
-}
-
-void LoadHistory(datetime time, string symbol, ENUM_TIMEFRAMES timeframe)
-{
-   // Improved history loading with error checking
-   datetime serverTime = TimeCurrent();
-   datetime fromTime = time > 0 ? time : serverTime - PeriodSeconds(timeframe) * 1000;
-   
-   int bars = Bars(symbol, timeframe, fromTime, serverTime);
-   if(bars < 100) // Ensure minimum history
-   {
-      int attempts = 0;
-      while(bars < 100 && attempts < 10)
-      {
-         Sleep(100);
-         bars = Bars(symbol, timeframe, fromTime, serverTime);
-         attempts++;
-      }
-      
-      if(bars < 100)
-         Print("WARNING: Limited history available: ", bars, " bars for ", symbol);
-   }
 }
 
 //+------------------------------------------------------------------+
