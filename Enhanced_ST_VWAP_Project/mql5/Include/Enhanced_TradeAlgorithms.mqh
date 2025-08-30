@@ -75,7 +75,14 @@ struct SessionTime
    int    endHour;
    int    endMinute;
    
-   SessionTime() : enabled(false), startHour(0), startMinute(0), endHour(0), endMinute(0) {}
+   void Init()
+   {
+      enabled = false;
+      startHour = 0;
+      startMinute = 0;
+      endHour = 0;
+      endMinute = 0;
+   }
 };
 
 struct PositionTracker
@@ -83,7 +90,7 @@ struct PositionTracker
    ulong ticket;
    int slModifications;
    int tpModifications;
-   ulong lastTickTime;
+   datetime lastTickTime;
    bool breakEvenExecuted;
    datetime entryTime;
    double entryPrice;
@@ -93,10 +100,37 @@ struct PositionTracker
    double maxDrawdown;        // Track maximum drawdown
    double runningPnL;         // Current unrealized P&L
    
-   PositionTracker() : ticket(0), slModifications(0), tpModifications(0), 
-                      lastTickTime(0), breakEvenExecuted(false), entryTime(0),
-                      entryPrice(0), originalSL(0), originalTP(0), maxProfit(0),
-                      maxDrawdown(0), runningPnL(0) {}
+   void Init()
+   {
+      ticket = 0;
+      slModifications = 0;
+      tpModifications = 0;
+      lastTickTime = 0;
+      breakEvenExecuted = false;
+      entryTime = 0;
+      entryPrice = 0;
+      originalSL = 0;
+      originalTP = 0;
+      maxProfit = 0;
+      maxDrawdown = 0;
+      runningPnL = 0;
+   }
+   
+   void CopyFrom(const PositionTracker &other)
+   {
+      ticket = other.ticket;
+      slModifications = other.slModifications;
+      tpModifications = other.tpModifications;
+      lastTickTime = other.lastTickTime;
+      breakEvenExecuted = other.breakEvenExecuted;
+      entryTime = other.entryTime;
+      entryPrice = other.entryPrice;
+      originalSL = other.originalSL;
+      originalTP = other.originalTP;
+      maxProfit = other.maxProfit;
+      maxDrawdown = other.maxDrawdown;
+      runningPnL = other.runningPnL;
+   }
 };
 
 struct TradeStats
