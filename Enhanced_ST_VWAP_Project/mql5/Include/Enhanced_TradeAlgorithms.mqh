@@ -104,6 +104,8 @@ EA_STATE g_eaState = ST_READY;
 datetime g_lastStateChange = 0;
 datetime g_freezeUntil = 0;
 datetime g_cooldownUntil = 0;
+int      g_freezeMinutes = 15;
+int      g_cooldownMinutes = 5;
 
 //+------------------------------------------------------------------+
 //| Global Variable Helper Functions                                 |
@@ -124,6 +126,13 @@ void GlobalVariableDel_(const string symbol)
    }
 }
 
+// Configure durations for freeze and cooldown states
+void ConfigureStateDurations(int freezeMin, int cooldownMin)
+{
+   g_freezeMinutes   = freezeMin;
+   g_cooldownMinutes = cooldownMin;
+}
+
 //+------------------------------------------------------------------+
 //| State Management Functions                                       |
 //+------------------------------------------------------------------+
@@ -139,13 +148,13 @@ void SetEAState(EA_STATE newState, FREEZE_REASON reason = FREEZE_TRADE_CLOSE)
       
       if(newState == ST_FROZEN)
       {
-         g_freezeUntil = TimeCurrent() + 15 * 60; // 15 minutes freeze
+         g_freezeUntil = TimeCurrent() + g_freezeMinutes * 60;
          string reasonText = EnumToString(reason);
          Print("EA Frozen due to: ", reasonText);
       }
       else if(newState == ST_COOLDOWN)
       {
-         g_cooldownUntil = TimeCurrent() + 5 * 60; // 5 minutes cooldown
+         g_cooldownUntil = TimeCurrent() + g_cooldownMinutes * 60;
       }
    }
 }
