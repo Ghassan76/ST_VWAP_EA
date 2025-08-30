@@ -189,25 +189,30 @@ struct PerformanceMetrics
 };
 
 //+------------------------------------------------------------------+
-//| Memory Pool for Efficient Array Management                      |
+//| Simple Position Pool for Efficient Management                   |
 //+------------------------------------------------------------------+
-template<typename T>
-class CMemoryPool
+class CPositionPool
 {
 private:
-   T m_pool[];
+   PositionTracker m_pool[];
    bool m_used[];
    int m_size;
    int m_nextFree;
    
 public:
-   CMemoryPool(int size = PERFORMANCE_BUFFER_SIZE)
+   CPositionPool()
    {
-      m_size = size;
+      m_size = PERFORMANCE_BUFFER_SIZE;
       ArrayResize(m_pool, m_size);
       ArrayResize(m_used, m_size);
       ArrayInitialize(m_used, false);
       m_nextFree = 0;
+      
+      // Initialize all positions
+      for(int i = 0; i < m_size; i++)
+      {
+         m_pool[i].Init();
+      }
    }
    
    int Allocate()
@@ -218,6 +223,7 @@ public:
          {
             m_used[i] = true;
             m_nextFree = i + 1;
+            m_pool[i].Init(); // Reset the position
             return i;
          }
       }
@@ -229,6 +235,7 @@ public:
          {
             m_used[i] = true;
             m_nextFree = i + 1;
+            m_pool[i].Init(); // Reset the position
             return i;
          }
       }
@@ -241,12 +248,13 @@ public:
       if(index >= 0 && index < m_size)
       {
          m_used[index] = false;
+         m_pool[index].Init(); // Reset the position
          if(index < m_nextFree)
             m_nextFree = index;
       }
    }
    
-   T* Get(int index)
+   PositionTracker* Get(int index)
    {
       if(index >= 0 && index < m_size && m_used[index])
          return &m_pool[index];
@@ -257,6 +265,10 @@ public:
    {
       ArrayInitialize(m_used, false);
       m_nextFree = 0;
+      for(int i = 0; i < m_size; i++)
+      {
+         m_pool[i].Init();
+      }
    }
 };
 
