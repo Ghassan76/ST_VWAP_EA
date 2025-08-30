@@ -7,6 +7,45 @@
 #property link      "https://www.mql5.com"
 #property version   "2.00"
 
+//+------------------------------------------------------------------+
+//| New Bar Detection Class                                          |
+//+------------------------------------------------------------------+
+class CIsNewBar
+{
+private:
+   datetime m_lastbar_time;
+   string   m_symbol;
+   ENUM_TIMEFRAMES m_timeframe;
+
+public:
+   CIsNewBar() : m_lastbar_time(0), m_symbol(""), m_timeframe(PERIOD_CURRENT) {}
+   
+   bool IsNewBar(string symbol, ENUM_TIMEFRAMES timeframe)
+   {
+      if(m_symbol != symbol || m_timeframe != timeframe)
+      {
+         m_symbol = symbol;
+         m_timeframe = timeframe;
+         m_lastbar_time = 0; // Reset for new symbol/timeframe
+      }
+      
+      datetime current_time = iTime(symbol, timeframe, 0);
+      
+      if(current_time > m_lastbar_time)
+      {
+         m_lastbar_time = current_time;
+         return true;
+      }
+      
+      return false;
+   }
+   
+   void Reset()
+   {
+      m_lastbar_time = 0;
+   }
+};
+
 #include <Trade\Trade.mqh>
 #include <Trade\SymbolInfo.mqh>
 #include <Trade\PositionInfo.mqh>
